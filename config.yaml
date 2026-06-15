@@ -1,0 +1,93 @@
+paths:
+  input_mp3: input/input.mp3
+  background_mp3: input/background.mp3
+  outputs_dir: outputs
+  asr_srt: outputs/asr/zh_raw.srt
+  cleaned_srt: outputs/cleaned/zh_cleaned.srt
+  merged_before_critic_srt: outputs/merged/zh_merged_before_critic.srt
+  corrected_srt: outputs/critic/zh_corrected.srt
+  merged_after_critic_srt: outputs/merged/zh_merged_after_critic.srt
+  translated_srt: outputs/translated/en_translated.srt
+  final_srt: outputs/final/en_final.srt
+  tts_segments_dir: outputs/tts_segments
+  reports_dir: outputs/reports
+  audio_dir: outputs/audio
+  narration_wav: outputs/audio/narration_en.wav
+  narration_mp3: outputs/audio/narration_en.mp3
+
+server:
+  host: 127.0.0.1
+  port: 8000
+
+jobs:
+  root_dir: outputs/jobs
+
+ffmpeg:
+  ffmpeg_path: ffmpeg/bin/ffmpeg.exe
+  ffprobe_path: ffmpeg/bin/ffprobe.exe
+
+media:
+  audio_sample_rate: 16000
+
+separation:
+  provider: demucs
+  method: python
+  model: htdemucs
+  device: cpu
+  shifts: 0
+  overlap: 0.1
+  segment: 7.5
+
+speaker:
+  mode: placeholder
+
+video:
+  copy_video: true
+
+workflow:
+  allow_mock_asr_for_jobs: false
+  force_job_asr_provider: faster_whisper
+
+asr:
+  provider: mock
+  model_name: small
+  language: zh
+  device: cpu
+  compute_type: int8
+  vad_filter: true
+  mock_when_missing_input: true
+
+llm:
+  api_key_env: LLM_API_KEY
+  base_url_env: LLM_BASE_URL
+  model_env: LLM_MODEL
+  timeout_env: LLM_TIMEOUT
+  max_retries_env: LLM_MAX_RETRIES
+  base_url: https://api.openai.com/v1
+  model: mock
+  timeout: 60
+  max_retries: 2
+
+translation:
+  allow_mock_fallback: false
+
+srt:
+  merge_max_chars: 38
+  merge_max_gap_ms: 450
+  merge_max_duration_ms: 6500
+
+tts:
+  provider: edge_tts
+  voice: en-US-AriaNeural
+  sample_rate: 24000
+  words_per_minute: 155
+  max_retries: 1
+
+duration:
+  max_overrun_ms: 350
+  max_ratio: 1.12
+  max_reflection_rounds: 1
+
+audio:
+  mix_background: false
+  background_volume: 0.18

@@ -1,0 +1,2 @@
+"""FastAPI media API package."""
+

@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>电影配音媒体控制台</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f4;
+      --panel: #ffffff;
+      --ink: #17211b;
+      --muted: #5d6961;
+      --line: #dce2dc;
+      --accent: #0f766e;
+      --accent-ink: #ffffff;
+      --warn: #a16207;
+      --danger: #b42318;
+      --ok: #166534;
+      --shadow: 0 10px 30px rgba(30, 41, 59, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.86);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .topbar {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 16px 20px;
+      display: grid;
+      grid-template-columns: 1fr minmax(280px, 420px);
+      gap: 18px;
+      align-items: center;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 720;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 2px;
+    }
+
+    .api-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 8px;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    input[type="text"],
+    input[type="file"] {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    main {
+      max-width: 1180px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 24px 20px 36px;
+      display: grid;
+      grid-template-columns: minmax(300px, 380px) 1fr;
+      gap: 18px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 18px;
+      align-content: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 760;
+    }
+
+    .panel-body {
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .upload-box {
+      border: 1px dashed #9ca89f;
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .button-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    button {
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #eef3ef;
+      color: var(--ink);
+      cursor: pointer;
+      font-weight: 700;
+      min-height: 42px;
+      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      border-color: #b8c4bc;
+    }
+
+    button:disabled {
+      opacity: 0.48;
+      cursor: not-allowed;
+    }
+
+    .primary {
+      background: var(--accent);
+      color: var(--accent-ink);
+    }
+
+    .wide {
+      width: 100%;
+    }
+
+    .meta-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: 112px 1fr;
+      gap: 10px;
+      align-items: start;
+      font-size: 13px;
+    }
+
+    .meta strong {
+      color: var(--muted);
+      font-weight: 650;
+    }
+
+    .mono {
+      font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      word-break: break-all;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: #edf7f3;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      border: 1px solid #c6e2da;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 8px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+    }
+
+    .step-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: inline-grid;
+      place-items: center;
+      background: #e7ece8;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .step.done .step-mark {
+      background: #d8efe4;
+      color: var(--ok);
+    }
+
+    .step.error .step-mark {
+      background: #fee4e2;
+      color: var(--danger);
+    }
+
+    .step-name {
+      font-weight: 730;
+      font-size: 13px;
+    }
+
+    .step-value {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .result-pane {
+      min-height: 540px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    pre {
+      margin: 0;
+      padding: 16px;
+      overflow: auto;
+      background: #111827;
+      color: #e5e7eb;
+      font-size: 12px;
+      line-height: 1.6;
+      min-height: 460px;
+      max-height: 68vh;
+    }
+
+    .toast {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .toast.error {
+      color: var(--danger);
+      border-color: #f4b7b2;
+      background: #fff5f4;
+    }
+
+    .toast.ok {
+      color: var(--ok);
+      border-color: #bbdfc4;
+      background: #f3fbf5;
+    }
+
+    .small-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .small-actions button {
+      min-height: 34px;
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+
+    .help {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .help p,
+    .help ul {
+      margin: 0;
+    }
+
+    .help ul {
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .help strong {
+      color: var(--ink);
+    }
+
+    .file-list {
+      display: grid;
+      gap: 8px;
+      max-height: 260px;
+      overflow: auto;
+    }
+
+    .file-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--line);
+      background: #fbfcfa;
+      border-radius: 8px;
+      padding: 9px 10px;
+      font-size: 12px;
+    }
+
+    .file-row a {
+      color: var(--accent);
+      font-weight: 750;
+      text-decoration: none;
+      word-break: break-all;
+    }
+
+    .file-row a:hover {
+      text-decoration: underline;
+    }
+
+    .file-size,
+    .empty {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 860px) {
+      .topbar,
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      .api-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="topbar">
+        <div>
+          <h1>电影配音媒体控制台</h1>
+          <div class="subtitle">FastAPI 媒体功能层 · 翻译与配音工作流</div>
+        </div>
+        <div class="api-row">
+          <label for="apiBase">API</label>
+          <input id="apiBase" type="text" value="" autocomplete="off">
+          <button id="healthBtn" type="button">检查</button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="stack">
+        <div class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">上传任务</h2>
+            <span id="uploadStatus" class="status-pill">空闲</span>
+          </div>
+          <div class="panel-body">
+            <div class="upload-box">
+              <input id="fileInput" type="file" accept=".mp4,.mp3,video/mp4,audio/mpeg">
+              <button id="uploadBtn" class="primary wide" type="button">创建任务</button>
+            </div>
+            <div class="meta-list">
+              <div class="meta"><strong>任务 ID</strong><span id="jobId" class="mono">-</span></div>
+              <div class="meta"><strong>状态</strong><span id="jobStatus">-</span></div>
+              <div class="meta"><strong>输入类型</strong><span id="inputKind">-</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">功能操作</h2>
+          </div>
+          <div class="panel-body">
+            <div class="button-grid">
+              <button id="probeBtn" type="button" disabled>媒体文件信息</button>
+              <button id="extractBtn" type="button" disabled>提取音频</button>
+              <button id="separateBtn" type="button" disabled>分离人声与背景音</button>
+              <button id="speakersBtn" type="button" disabled>说话人识别</button>
+              <button id="langgraphBtn" type="button" disabled>翻译与配音工作流</button>
+              <button id="packageBtn" type="button" disabled>合成最终视频</button>
+            </div>
+            <input id="audioPath" type="text" placeholder="封装用音频路径，留空时使用已提取音频">
+            <div id="message" class="toast">就绪。</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">功能使用简介</h2>
+          </div>
+          <div class="panel-body help">
+            <p>推荐顺序：上传 MP4/MP3 新建任务，然后依次执行媒体文件信息、提取音频、分离人声与背景音、翻译与配音工作流。需要生成最终视频时，再执行合成最终视频。</p>
+            <ul>
+              <li><strong>新建任务：</strong>上传 MP4/MP3 创建独立 job 工作区。</li>
+              <li><strong>媒体文件信息：</strong>读取音视频流、时长和格式信息。</li>
+              <li><strong>提取音频：</strong>从 MP4/MP3 得到标准 WAV。</li>
+              <li><strong>分离人声与背景音：</strong>调用本地 Demucs，生成 vocals.wav 和 background.wav。</li>
+              <li><strong>翻译与配音工作流：</strong>使用当前 job 的 vocals.wav 执行 ASR、字幕清洗合并、LLM 校对、摘要、翻译、TTS、时长检测和最终音频合并；页面触发时默认不再静默使用 mock ASR。</li>
+              <li><strong>合成最终视频：</strong>复制原视频流，并用指定音频替换原音轨；不会自动烧录字幕或自动混入背景音。</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">工作目录</h2>
+            <span id="fileCount" class="status-pill">0 个文件</span>
+          </div>
+          <div class="panel-body">
+            <div class="button-grid">
+              <button id="openDirBtn" type="button" disabled>打开目录</button>
+              <button id="refreshFilesBtn" type="button" disabled>刷新文件</button>
+            </div>
+            <div id="jobDir" class="mono empty">尚未创建任务</div>
+            <div id="fileList" class="file-list">
+              <div class="empty">创建任务后可查看上传文件和生成文件。</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">处理进度</h2>
+          </div>
+          <div class="panel-body">
+            <div class="timeline">
+              <div id="stepUpload" class="step"><span class="step-mark">1</span><span class="step-name">新建任务</span><span class="step-value">等待</span></div>
+              <div id="stepProbe" class="step"><span class="step-mark">2</span><span class="step-name">媒体文件信息</span><span class="step-value">等待</span></div>
+              <div id="stepExtract" class="step"><span class="step-mark">3</span><span class="step-name">提取音频</span><span class="step-value">等待</span></div>
+              <div id="stepSeparate" class="step"><span class="step-mark">4</span><span class="step-name">分离人声与背景音</span><span class="step-value">等待</span></div>
+              <div id="stepLangGraph" class="step"><span class="step-mark">5</span><span class="step-name">翻译与配音工作流</span><span class="step-value">等待</span></div>
+              <div id="stepPackage" class="step"><span class="step-mark">6</span><span class="step-name">合成最终视频</span><span class="step-value">等待</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel result-pane">
+        <div class="panel-head">
+          <h2 class="panel-title">接口响应</h2>
+          <div class="small-actions">
+            <button id="refreshBtn" type="button" disabled>刷新任务</button>
+            <button id="clearBtn" type="button">清空</button>
+          </div>
+        </div>
+        <pre id="output">{}</pre>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const state = {
+      job: null,
+      last: null
+    };
+
+    const els = {
+      apiBase: document.getElementById('apiBase'),
+      fileInput: document.getElementById('fileInput'),
+      uploadBtn: document.getElementById('uploadBtn'),
+      healthBtn: document.getElementById('healthBtn'),
+      uploadStatus: document.getElementById('uploadStatus'),
+      jobId: document.getElementById('jobId'),
+      jobStatus: document.getElementById('jobStatus'),
+      inputKind: document.getElementById('inputKind'),
+      message: document.getElementById('message'),
+      output: document.getElementById('output'),
+      audioPath: document.getElementById('audioPath'),
+      probeBtn: document.getElementById('probeBtn'),
+      extractBtn: document.getElementById('extractBtn'),
+      separateBtn: document.getElementById('separateBtn'),
+      speakersBtn: document.getElementById('speakersBtn'),
+      langgraphBtn: document.getElementById('langgraphBtn'),
+      packageBtn: document.getElementById('packageBtn'),
+      openDirBtn: document.getElementById('openDirBtn'),
+      refreshFilesBtn: document.getElementById('refreshFilesBtn'),
+      refreshBtn: document.getElementById('refreshBtn'),
+      clearBtn: document.getElementById('clearBtn'),
+      jobDir: document.getElementById('jobDir'),
+      fileCount: document.getElementById('fileCount'),
+      fileList: document.getElementById('fileList'),
+      steps: {
+        upload: document.getElementById('stepUpload'),
+        probe: document.getElementById('stepProbe'),
+        extract: document.getElementById('stepExtract'),
+        separate: document.getElementById('stepSeparate'),
+        langgraph: document.getElementById('stepLangGraph'),
+        package: document.getElementById('stepPackage')
+      }
+    };
+
+    els.apiBase.value = window.location.origin || 'http://127.0.0.1:8000';
+
+    function apiBase() {
+      return els.apiBase.value.replace(/\/+$/, '');
+    }
+
+    function setMessage(text, kind = '') {
+      els.message.textContent = text;
+      els.message.className = kind ? `toast ${kind}` : 'toast';
+    }
+
+    function setOutput(data) {
+      state.last = data;
+      els.output.textContent = JSON.stringify(data, null, 2);
+    }
+
+    function setBusy(button, busy) {
+      button.disabled = busy || !state.job;
+      button.dataset.busy = busy ? 'true' : 'false';
+    }
+
+    function setStep(name, status, kind = 'done') {
+      const step = els.steps[name];
+      if (!step) return;
+      step.classList.remove('done', 'error');
+      if (kind) step.classList.add(kind);
+      step.querySelector('.step-value').textContent = status;
+    }
+
+    function updateJob(job) {
+      state.job = job;
+      els.jobId.textContent = job ? job.job_id : '-';
+      els.jobStatus.textContent = job ? job.status : '-';
+      els.inputKind.textContent = job ? job.input_kind : '-';
+      els.uploadStatus.textContent = job ? job.status : '空闲';
+      const enabled = Boolean(job);
+      for (const button of [
+        els.probeBtn,
+        els.extractBtn,
+        els.separateBtn,
+        els.speakersBtn,
+        els.langgraphBtn,
+        els.packageBtn,
+        els.openDirBtn,
+        els.refreshFilesBtn,
+        els.refreshBtn
+      ]) {
+        button.disabled = !enabled;
+      }
+      if (job) {
+        setStep('upload', job.status, 'done');
+      }
+    }
+
+    async function requestJson(path, options = {}) {
+      const response = await fetch(`${apiBase()}${path}`, options);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const detail = body.detail || response.statusText;
+        throw new Error(detail);
+      }
+      return body;
+    }
+
+    async function runAction(button, stepName, label, fn) {
+      if (!state.job) return;
+      button.disabled = true;
+      setMessage(`${label}执行中...`);
+      try {
+        const data = await fn();
+        setOutput(data);
+        if (isFailureStatus(data.status)) {
+          setStep(stepName, data.status || '失败', 'error');
+          setMessage(
+            data.hint || data.error || `${label}失败。请查看接口响应或工作目录报告。`,
+            'error'
+          );
+        } else {
+          setStep(stepName, data.status || '完成', 'done');
+          setMessage(`${label}完成。`, 'ok');
+        }
+        await refreshJob(false);
+        await refreshFiles(false);
+      } catch (error) {
+        setStep(stepName, '失败', 'error');
+        setMessage(error.message, 'error');
+        setOutput({ error: error.message });
+      } finally {
+        button.disabled = !state.job;
+      }
+    }
+
+    function isFailureStatus(status) {
+      return ['failed', 'unavailable', 'error'].includes(String(status || '').toLowerCase());
+    }
+
+    async function refreshJob(showOutput = true) {
+      if (!state.job) return;
+      const job = await requestJson(`/api/jobs/${state.job.job_id}`);
+      updateJob(job);
+      if (showOutput) setOutput(job);
+    }
+
+    async function refreshFiles(showOutput = false) {
+      if (!state.job) return;
+      const data = await requestJson(`/api/jobs/${state.job.job_id}/files`);
+      renderFiles(data);
+      if (showOutput) setOutput(data);
+    }
+
+    function renderFiles(data) {
+      els.jobDir.textContent = data.job_dir || '-';
+      els.fileCount.textContent = `${data.file_count || 0} 个文件`;
+      const files = data.files || [];
+      if (!files.length) {
+        els.fileList.innerHTML = '<div class="empty">当前工作目录还没有文件。</div>';
+        return;
+      }
+      els.fileList.innerHTML = files.map((file) => {
+        const href = `${apiBase()}${file.download_url}`;
+        return `
+          <div class="file-row">
+            <a href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(file.relative_path)}</a>
+            <span class="file-size">${formatBytes(file.size_bytes)}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function formatBytes(value) {
+      const size = Number(value || 0);
+      if (size < 1024) return `${size} B`;
+      if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+      if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+      return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`;
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    els.healthBtn.addEventListener('click', async () => {
+      try {
+        const data = await requestJson('/health');
+        setOutput(data);
+        setMessage('API 连接正常。', 'ok');
+      } catch (error) {
+        setMessage(error.message, 'error');
+        setOutput({ error: error.message });
+      }
+    });
+
+    els.uploadBtn.addEventListener('click', async () => {
+      const file = els.fileInput.files[0];
+      if (!file) {
+        setMessage('请选择 MP4 或 MP3 文件。', 'error');
+        return;
+      }
+      els.uploadBtn.disabled = true;
+      setMessage('正在上传...');
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const job = await requestJson('/api/jobs', {
+          method: 'POST',
+          body: form
+        });
+        updateJob(job);
+        setOutput(job);
+        await refreshFiles(false);
+        setMessage('任务已创建。', 'ok');
+      } catch (error) {
+        setMessage(error.message, 'error');
+        setOutput({ error: error.message });
+      } finally {
+        els.uploadBtn.disabled = false;
+      }
+    });
+
+    els.probeBtn.addEventListener('click', () => runAction(
+      els.probeBtn,
+      'probe',
+      '媒体文件信息',
+      () => requestJson(`/api/jobs/${state.job.job_id}/media/probe`)
+    ));
+
+    els.extractBtn.addEventListener('click', () => runAction(
+      els.extractBtn,
+      'extract',
+      '提取音频',
+      () => requestJson(`/api/jobs/${state.job.job_id}/media/extract-audio`, { method: 'POST' })
+    ));
+
+    els.separateBtn.addEventListener('click', () => runAction(
+      els.separateBtn,
+      'separate',
+      '分离人声与背景音',
+      () => requestJson(`/api/jobs/${state.job.job_id}/audio/separate`, { method: 'POST' })
+    ));
+
+    els.speakersBtn.addEventListener('click', () => runAction(
+      els.speakersBtn,
+      'speakers',
+      '说话人识别',
+      () => requestJson(`/api/jobs/${state.job.job_id}/speakers/identify`, { method: 'POST' })
+    ));
+
+    els.langgraphBtn.addEventListener('click', () => runAction(
+      els.langgraphBtn,
+      'langgraph',
+      '翻译与配音工作流',
+      () => requestJson(`/api/jobs/${state.job.job_id}/workflow/langgraph`, { method: 'POST' })
+    ));
+
+    els.packageBtn.addEventListener('click', () => runAction(
+      els.packageBtn,
+      'package',
+      '合成最终视频',
+      () => requestJson(`/api/jobs/${state.job.job_id}/video/package`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audio_path: els.audioPath.value.trim() || null,
+          output_filename: 'final_en.mp4'
+        })
+      })
+    ));
+
+    els.refreshBtn.addEventListener('click', () => refreshJob(true).catch((error) => {
+      setMessage(error.message, 'error');
+    }));
+
+    els.refreshFilesBtn.addEventListener('click', () => refreshFiles(true).catch((error) => {
+      setMessage(error.message, 'error');
+    }));
+
+    els.openDirBtn.addEventListener('click', async () => {
+      if (!state.job) return;
+      try {
+        const data = await requestJson(`/api/jobs/${state.job.job_id}/open-workdir`, { method: 'POST' });
+        setOutput(data);
+        setMessage('工作目录已打开。', 'ok');
+      } catch (error) {
+        setMessage(error.message, 'error');
+        setOutput({ error: error.message });
+      }
+    });
+
+    els.clearBtn.addEventListener('click', () => {
+      setOutput({});
+      setMessage('就绪。');
+    });
+  </script>
+</body>
+</html>

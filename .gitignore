@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE/editor local state
+.idea/
+.vscode/*
+!.vscode/settings.json
+
+# Runtime inputs and generated media
+input/*.mp3
+input/*.mp4
+input/*.wav
+input/background.*
+outputs/
+
+# Local FFmpeg bundle and other large binaries
+ffmpeg/
+
+# OS files
+.DS_Store
+Thumbs.db
