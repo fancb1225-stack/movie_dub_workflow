@@ -1,15 +1,16 @@
-# Codex Agent Instructions
+# Claude Code Agent Instructions
 
 ## 项目边界
 
 本项目现在包含两套并列能力：
 
 1. 现有 LangGraph CLI 英文配音工作流。
-2. 新增 FastAPI 媒体功能层，供纯 HTML Web 页面调用。
+2. 新增 FastAPI 媒体功能层，供后续 Web 页面调用。
 
 新增媒体功能层不得插入当前 LangGraph 主流程。不要把 MP4、人声分离、视频封装等功能硬塞进 `src/graph.py`。
 
 ## Python 与依赖管理
+
 
 - 使用项目 venv：`.venv\Scripts\python.exe`。
 - 包管理优先使用 `uv`，备选 `pip`。
@@ -58,7 +59,6 @@ outputs/jobs/<job_id>/
 6. 不要用 LLM 做媒体处理。
 7. 不要把 tools 暴露给 LLM。
 8. 不要实现 ReAct Agent。
-9. Web 页面保持纯 HTML/CSS/JS，不引入前端框架，除非用户明确要求。
 
 ## TDD 开发规范
 

@@ -1,0 +1,129 @@
+{
+  "total_segments": 15,
+  "success_segments": 15,
+  "failed_segments": 0,
+  "failed_errors": [],
+  "duration_issue_count": 12,
+  "issues": [
+    {
+      "index": 3,
+      "start_ms": 10600,
+      "end_ms": 14240,
+      "subtitle_duration_ms": 3640,
+      "tts_duration_ms": 4800,
+      "overrun_ms": 1160,
+      "ratio": 1.319,
+      "text": "Given the age that produced it, an age when cinema is dying, emotion is losing value,"
+    },
+    {
+      "index": 5,
+      "start_ms": 17840,
+      "end_ms": 22040,
+      "subtitle_duration_ms": 4200,
+      "tts_duration_ms": 6048,
+      "overrun_ms": 1848,
+      "ratio": 1.44,
+      "text": "A Letter to Grandma is my favorite kind of film, one with extraordinary layers. People with different knowledge,"
+    },
+    {
+      "index": 6,
+      "start_ms": 22040,
+      "end_ms": 25240,
+      "subtitle_duration_ms": 3200,
+      "tts_duration_ms": 3888,
+      "overrun_ms": 688,
+      "ratio": 1.215,
+      "text": "and different life experiences, will find entirely different things in it."
+    },
+    {
+      "index": 7,
+      "start_ms": 25240,
+      "end_ms": 27600,
+      "subtitle_duration_ms": 2360,
+      "tts_duration_ms": 4632,
+      "overrun_ms": 2272,
+      "ratio": 1.963,
+      "text": "Some see affection. Some see loyalty. Some wonder:"
+    },
+    {
+      "index": 8,
+      "start_ms": 27600,
+      "end_ms": 31400,
+      "subtitle_duration_ms": 3800,
+      "tts_duration_ms": 5160,
+      "overrun_ms": 1360,
+      "ratio": 1.358,
+      "text": "Does the hero truly love Musheng? Some see feminism, some see life's impermanence,"
+    },
+    {
+      "index": 9,
+      "start_ms": 31400,
+      "end_ms": 36800,
+      "subtitle_duration_ms": 5400,
+      "tts_duration_ms": 5784,
+      "overrun_ms": 384,
+      "ratio": 1.071,
+      "text": "some see the power of time, some see the suffering of overseas Chinese, and some see civilization passed on."
+    },
+    {
+      "index": 10,
+      "start_ms": 36800,
+      "end_ms": 40100,
+      "subtitle_duration_ms": 3300,
+      "tts_duration_ms": 4512,
+      "overrun_ms": 1212,
+      "ratio": 1.367,
+      "text": "And on every level, the film is written almost perfectly, suggesting without revealing,"
+    },
+    {
+      "index": 11,
+      "start_ms": 40100,
+      "end_ms": 42300,
+      "subtitle_duration_ms": 2200,
+      "tts_duration_ms": 2880,
+      "overrun_ms": 680,
+      "ratio": 1.309,
+      "text": "holding back before release, restrained and calm,"
+    },
+    {
+      "index": 12,
+      "start_ms": 42300,
+      "end_ms": 46600,
+      "subtitle_duration_ms": 4300,
+      "tts_duration_ms": 5112,
+      "overrun_ms": 812,
+      "ratio": 1.189,
+      "text": "yet profound. Like Hemingway's iceberg theory, the tip above water seems small,"
+    },
+    {
+      "index": 13,
+      "start_ms": 46600,
+      "end_ms": 51900,
+      "subtitle_duration_ms": 5300,
+      "tts_duration_ms": 6000,
+      "overrun_ms": 700,
+      "ratio": 1.132,
+      "text": "but beneath it lies ancient, massive ice. On the surface, the story is about finding Zheng Musheng."
+    },
+    {
+      "index": 14,
+      "start_ms": 51900,
+      "end_ms": 55200,
+      "subtitle_duration_ms": 3300,
+      "tts_duration_ms": 4656,
+      "overrun_ms": 1356,
+      "ratio": 1.411,
+      "text": "In truth, the real protagonist is the male lead. Zheng Musheng's role"
+    },
+    {
+      "index": 15,
+      "start_ms": 55200,
+      "end_ms": 58200,
+      "subtitle_duration_ms": 3000,
+      "tts_duration_ms": 4224,
+      "overrun_ms": 1224,
+      "ratio": 1.408,
+      "text": "is more like a guide on his path through life, and early on, the film's greatest weight"
+    }
+  ]
+}

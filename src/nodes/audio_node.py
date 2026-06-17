@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
+
 from src.config import config_path
 from src.state import WorkflowState
 from src.tools.audio_tools import align_and_merge_segments
 from src.tools.file_tools import write_json, write_text
 
+logger = logging.getLogger(__name__)
+
 
 def align_and_merge_audio(state: WorkflowState) -> WorkflowState:
+    logger.info("align_and_merge_audio: entering node")
     config = state["config"]
     final_srt = state.get("final_srt", "")
     write_text(config_path(config, "paths.final_srt"), final_srt)
@@ -36,9 +41,7 @@ def _build_pipeline_report(
         "asr_srt": config["paths"]["asr_srt"],
         "raw_subtitle_count": len(state.get("raw_cues", [])),
         "cleaned_subtitle_count": len(state.get("cleaned_cues", [])),
-        "merged_before_critic_count": len(state.get("merged_before_critic_cues", [])),
         "corrected_count": len(state.get("corrected_cues", [])),
-        "merged_after_critic_count": len(state.get("merged_after_critic_cues", [])),
         "translated_count": len(state.get("en_translated_cues", [])),
         "reflection_rounds": int(state.get("reflection_rounds", 0)),
         "remaining_duration_issues": len(state.get("duration_issues", [])),

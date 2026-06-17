@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import subprocess
 import wave
 from pathlib import Path
@@ -7,6 +8,8 @@ from typing import Any
 
 from src.config import find_binary
 from src.state import DurationIssue, SrtCue, TtsSegment
+
+logger = logging.getLogger(__name__)
 
 
 def get_audio_duration_ms(
@@ -17,12 +20,17 @@ def get_audio_duration_ms(
         raise FileNotFoundError(f"Audio file does not exist: {audio_path}")
     wave_duration = _duration_with_wave(audio_path)
     if wave_duration is not None:
+        logger.debug("Duration via wave: %d ms for %s", wave_duration, audio_path.name)
         return wave_duration
+    logger.debug("wave failed for %s, trying ffprobe", audio_path.name)
     ffprobe_duration = _duration_with_ffprobe(audio_path, config)
     if ffprobe_duration is not None:
+        logger.debug("Duration via ffprobe: %d ms for %s", ffprobe_duration, audio_path.name)
         return ffprobe_duration
+    logger.debug("ffprobe failed for %s, trying pydub", audio_path.name)
     pydub_duration = _duration_with_pydub(audio_path)
     if pydub_duration is not None:
+        logger.debug("Duration via pydub: %d ms for %s", pydub_duration, audio_path.name)
         return pydub_duration
     raise RuntimeError(f"Unable to detect audio duration: {audio_path}")
 
@@ -66,10 +74,16 @@ def build_tts_duration_report(
 ) -> dict[str, object]:
     success_count = sum(1 for segment in segments if segment.get("success"))
     failed_count = len(segments) - success_count
+    failed_errors = [
+        {"index": s["index"], "error": s.get("error", "unknown")}
+        for s in segments
+        if not s.get("success")
+    ]
     return {
         "total_segments": len(segments),
         "success_segments": success_count,
         "failed_segments": failed_count,
+        "failed_errors": failed_errors,
         "duration_issue_count": len(issues),
         "issues": issues,
     }

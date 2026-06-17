@@ -36,6 +36,15 @@ class DurationIssue(TypedDict):
     text: str
 
 
+class AdjustedPosition(TypedDict):
+    index: int
+    original_start_ms: int
+    adjusted_start_ms: int
+    shift_ms: int
+    strategy: str           # "delay" | "shift_back" | "fallback" | "none"
+    overlap_with_previous_ms: int
+
+
 class WorkflowState(TypedDict, total=False):
     config: dict[str, Any]
     input_mode: str
@@ -51,14 +60,12 @@ class WorkflowState(TypedDict, total=False):
     asr_result: dict[str, Any]
     raw_srt: str
     raw_cues: list[SrtCue]
+    merged_asr_srt: str
+    merged_asr_cues: list[SrtCue]
     cleaned_srt: str
     cleaned_cues: list[SrtCue]
-    merged_before_critic_srt: str
-    merged_before_critic_cues: list[SrtCue]
     corrected_srt: str
     corrected_cues: list[SrtCue]
-    merged_after_critic_srt: str
-    merged_after_critic_cues: list[SrtCue]
     plot_summary: str
     en_translated_srt: str
     en_translated_cues: list[SrtCue]

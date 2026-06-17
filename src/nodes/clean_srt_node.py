@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
+
 from src.config import config_path
 from src.state import WorkflowState
 from src.tools.file_tools import write_text
 from src.tools.srt_tools import clean_cues, format_srt, parse_srt
 
+logger = logging.getLogger(__name__)
+
 
 def clean_srt(state: WorkflowState) -> WorkflowState:
+    logger.info("clean_srt: entering node")
     config = state["config"]
     cues = state.get("raw_cues") or parse_srt(state.get("raw_srt", ""))
     cleaned_cues = clean_cues(cues)

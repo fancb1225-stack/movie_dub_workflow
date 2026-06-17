@@ -10,13 +10,13 @@ from typing import Any
 DEFAULT_CONFIG: dict[str, Any] = {
     "paths": {
         "input_mp3": "input/input.mp3",
+        "input_video": "",
         "background_mp3": "input/background.mp3",
         "outputs_dir": "outputs",
         "asr_srt": "outputs/asr/zh_raw.srt",
+        "merged_asr_srt": "outputs/merged/zh_asr_merged.srt",
         "cleaned_srt": "outputs/cleaned/zh_cleaned.srt",
-        "merged_before_critic_srt": "outputs/merged/zh_merged_before_critic.srt",
         "corrected_srt": "outputs/critic/zh_corrected.srt",
-        "merged_after_critic_srt": "outputs/merged/zh_merged_after_critic.srt",
         "translated_srt": "outputs/translated/en_translated.srt",
         "final_srt": "outputs/final/en_final.srt",
         "tts_segments_dir": "outputs/tts_segments",
@@ -24,6 +24,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "audio_dir": "outputs/audio",
         "narration_wav": "outputs/audio/narration_en.wav",
         "narration_mp3": "outputs/audio/narration_en.mp3",
+        "jianying_draft_dir": "outputs/jianying",
     },
     "server": {
         "host": "127.0.0.1",
@@ -76,6 +77,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "translation": {
         "allow_mock_fallback": False,
+        "chunk_size": 20,
+        "max_parallel_chunks": 3,
     },
     "srt": {
         "merge_max_chars": 38,
@@ -85,6 +88,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "tts": {
         "provider": "mock",
         "voice": "en-US-AriaNeural",
+        "rate": "+30%",
         "sample_rate": 24000,
         "words_per_minute": 155,
         "max_retries": 1,
@@ -97,6 +101,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "audio": {
         "mix_background": False,
         "background_volume": 0.18,
+    },
+    "alignment": {
+        "max_shift_back_overlap_ms": 200,
+        "shift_back_gap_ms": 50,
+        "enable_overlap_resolution": True,
     },
 }
 

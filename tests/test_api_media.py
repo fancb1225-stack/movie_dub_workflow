@@ -23,6 +23,8 @@ def test_media_api_upload_extract_and_package(tmp_path: Path) -> None:
     config["jobs"]["root_dir"] = str(tmp_path / "jobs")
     config.setdefault("workflow", {})["allow_mock_asr_for_jobs"] = True
     config.setdefault("translation", {})["allow_mock_fallback"] = True
+    config.setdefault("jianying", {})["auto_install"] = False
+    config.setdefault("jianying", {})["auto_launch"] = False
     config["llm"]["api_key"] = ""
     config["llm"]["model"] = "mock"
     ffmpeg = find_binary(config, "ffmpeg.ffmpeg_path", "ffmpeg")
@@ -65,15 +67,17 @@ def test_media_api_upload_extract_and_package(tmp_path: Path) -> None:
     extracted = response.json()
     assert Path(extracted["source_audio_wav"]).exists()
 
-    vocals_path = Path(job["paths"]["media_dir"]) / "separation" / "vocals.wav"
-    _write_test_wav(vocals_path)
+    raw_srt = Path(job["paths"]["job_dir"]) / "workflow" / "asr" / "zh_raw.srt"
+    raw_srt.parent.mkdir(parents=True, exist_ok=True)
+    raw_srt.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\n测试字幕\n",
+        encoding="utf-8",
+    )
     response = client.post(f"/api/jobs/{job_id}/workflow/langgraph")
     assert response.status_code == 200, response.text
     workflow = response.json()
     assert workflow["status"] == "success"
-    assert workflow["input_audio"] == str(vocals_path)
-    assert workflow["asr_provider"] == "mock"
-    assert workflow["used_mock_asr"] is True
+    assert workflow["raw_srt"] == str(raw_srt)
     assert Path(workflow["final_srt"]).exists()
     assert Path(workflow["narration_wav"]).exists()
     assert Path(workflow["narration_mp3"]).exists()
@@ -98,6 +102,39 @@ def test_web_index_is_served(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert "电影配音媒体控制台" in response.text
+
+
+def test_media_api_accepts_wav_upload(tmp_path: Path) -> None:
+    config = load_config("config.yaml")
+    config["jobs"]["root_dir"] = str(tmp_path / "jobs")
+    source_wav = tmp_path / "source.wav"
+    _write_test_wav(source_wav)
+
+    app = create_app()
+    app.state.config = config
+    client = TestClient(app)
+
+    with source_wav.open("rb") as reader:
+        response = client.post(
+            "/api/jobs",
+            files={"file": ("source.wav", reader, "audio/wav")},
+        )
+    assert response.status_code == 200, response.text
+    job = response.json()
+    job_id = job["job_id"]
+    assert job["input_kind"] == "wav"
+    assert Path(job["paths"]["input"]).name == "original.wav"
+
+    response = client.get(f"/api/jobs/{job_id}/media/probe")
+    assert response.status_code == 200, response.text
+    probe = response.json()
+    assert probe["has_audio"] is True
+    assert probe["has_video"] is False
+
+    response = client.post(f"/api/jobs/{job_id}/media/extract-audio")
+    assert response.status_code == 200, response.text
+    extracted = response.json()
+    assert Path(extracted["source_audio_wav"]).exists()
 
 
 def _write_test_wav(path: Path) -> None:

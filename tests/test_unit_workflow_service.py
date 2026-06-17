@@ -13,22 +13,24 @@ from src.services.workflow_service import WorkflowService, _workflow_hint
 
 
 class WorkflowServiceTests(unittest.TestCase):
-    def test_run_job_langgraph_workflow_uses_separated_vocals(self) -> None:
+    def test_run_job_langgraph_workflow_uses_raw_srt(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = _config(temp_dir)
             job = _create_job(config, "job-1")
-            vocals_path = Path(job["paths"]["media_dir"]) / "separation" / "vocals.wav"
+            # Create ASR SRT as if preprocess already ran
+            asr_dir = Path(job["paths"]["job_dir"]) / "workflow" / "asr"
+            asr_dir.mkdir(parents=True, exist_ok=True)
+            raw_srt_path = asr_dir / "zh_raw.srt"
+            raw_srt_path.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\n测试字幕\n", encoding="utf-8"
+            )
             background_path = Path(job["paths"]["media_dir"]) / "separation" / "background.wav"
-            source_audio_path = Path(job["paths"]["media_dir"]) / "source_audio.wav"
-            _write_wav(vocals_path)
             _write_wav(background_path)
-            _write_wav(source_audio_path)
             JobService(config).update_job(
                 job["job_id"],
-                status="audio_separated",
+                status="preprocessed",
                 artifacts={
-                    "source_audio_wav": str(source_audio_path),
-                    "vocals_wav": str(vocals_path),
+                    "raw_srt": str(raw_srt_path),
                     "background_wav": str(background_path),
                 },
             )
@@ -36,11 +38,8 @@ class WorkflowServiceTests(unittest.TestCase):
             report = WorkflowService(config).run_job_langgraph_workflow(job["job_id"])
 
             self.assertEqual(report["status"], "success")
-            self.assertEqual(report["input_audio"], str(vocals_path))
             self.assertEqual(report["background_audio"], str(background_path))
-            self.assertEqual(report["asr_provider"], "mock")
-            self.assertTrue(report["used_mock_asr"])
-            self.assertNotEqual(report["input_audio"], str(source_audio_path))
+            self.assertIsNotNone(report.get("raw_srt"))
             self.assertTrue(Path(report["final_srt"]).exists())
             self.assertTrue(Path(report["narration_wav"]).exists())
             self.assertTrue(Path(report["narration_mp3"]).exists())
@@ -48,11 +47,9 @@ class WorkflowServiceTests(unittest.TestCase):
             updated = JobService(config).get_job(job["job_id"])
             self.assertEqual(updated["status"], "langgraph_completed")
             self.assertIn("final_srt", updated["artifacts"])
-            self.assertIn("langgraph_input_audio", updated["artifacts"])
-            self.assertEqual(updated["artifacts"]["langgraph_input_audio"], str(vocals_path))
             self.assertIn("langgraph_workflow_report", updated["reports"])
 
-    def test_run_job_langgraph_workflow_requires_vocals(self) -> None:
+    def test_run_job_langgraph_workflow_requires_raw_srt(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = _config(temp_dir)
             job = _create_job(config, "job-2")
@@ -60,38 +57,78 @@ class WorkflowServiceTests(unittest.TestCase):
             report = WorkflowService(config).run_job_langgraph_workflow(job["job_id"])
 
             self.assertEqual(report["status"], "failed")
-            self.assertIn("分离人声与背景音", report["hint"])
+            self.assertIn("预处理", report["hint"])
             updated = JobService(config).get_job(job["job_id"])
             self.assertEqual(updated["status"], "langgraph_failed")
 
-    def test_job_langgraph_workflow_disables_mock_asr_by_default(self) -> None:
+    def test_preprocess_streaming_forces_configured_job_asr_provider(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = _config(temp_dir, allow_mock_asr_for_jobs=False)
-            job = _create_job(config, "job-3")
+            config["workflow"]["force_job_asr_provider"] = "faster_whisper"
+            config["asr"]["provider"] = "mock"
+            job = _create_job(config, "job-preprocess-asr-provider")
             vocals_path = Path(job["paths"]["media_dir"]) / "separation" / "vocals.wav"
             _write_wav(vocals_path)
-            seen_provider: list[str] = []
+            captured_providers: list[str] = []
 
-            class ProviderAssertingWorkflow:
+            def fake_transcribe(input_audio: Path, output_srt: Path, job_config: dict[str, Any]) -> dict[str, Any]:
+                captured_providers.append(job_config["asr"]["provider"])
+                srt_text = "1\n00:00:00,000 --> 00:00:01,000\n测试字幕\n"
+                return {
+                    "provider": job_config["asr"]["provider"],
+                    "input_mp3": str(input_audio),
+                    "output_srt": str(output_srt),
+                    "subtitle_count": 1,
+                    "cues": [],
+                    "srt": srt_text,
+                }
+
+            with (
+                patch(
+                    "src.services.workflow_service.MediaService.extract_audio_for_job",
+                    return_value={"status": "extracted"},
+                ),
+                patch(
+                    "src.services.workflow_service.SeparationService.separate_job_audio",
+                    return_value={"status": "success"},
+                ),
+                patch(
+                    "src.services.workflow_service.transcribe_mp3_to_srt",
+                    side_effect=fake_transcribe,
+                ),
+            ):
+                events = list(WorkflowService(config).run_job_preprocess_streaming(job["job_id"]))
+
+            self.assertEqual(events[-1]["event"], "done")
+            self.assertEqual(captured_providers, ["faster_whisper"])
+
+    def test_run_job_langgraph_workflow_handles_invoke_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = _config(temp_dir)
+            job = _create_job(config, "job-3")
+            asr_dir = Path(job["paths"]["job_dir"]) / "workflow" / "asr"
+            asr_dir.mkdir(parents=True, exist_ok=True)
+            raw_srt_path = asr_dir / "zh_raw.srt"
+            raw_srt_path.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\n测试\n", encoding="utf-8"
+            )
+            JobService(config).update_job(
+                job["job_id"],
+                artifacts={"raw_srt": str(raw_srt_path)},
+            )
+
+            class FailingWorkflow:
                 def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
-                    asr_config = state["config"]["asr"]
-                    seen_provider.append(str(asr_config["provider"]))
-                    assert asr_config["mock_when_missing_input"] is False
-                    assert asr_config["device"] == "cpu"
-                    assert asr_config["compute_type"] == "int8"
-                    raise RuntimeError(
-                        "ASR provider faster_whisper requires the faster-whisper package."
-                    )
+                    raise RuntimeError("LLM HTTP 403: access_denied")
 
             with patch(
                 "src.services.workflow_service.build_workflow",
-                return_value=ProviderAssertingWorkflow(),
+                return_value=FailingWorkflow(),
             ):
                 report = WorkflowService(config).run_job_langgraph_workflow(job["job_id"])
 
-            self.assertEqual(seen_provider, ["faster_whisper"])
             self.assertEqual(report["status"], "failed")
-            self.assertIn("不再使用 mock ASR", report["hint"])
+            self.assertIn("LLM 服务拒绝访问", report["hint"])
             updated = JobService(config).get_job(job["job_id"])
             self.assertEqual(updated["status"], "langgraph_failed")
 
@@ -118,9 +155,7 @@ def _config(temp_dir: str, allow_mock_asr_for_jobs: bool = True) -> dict[str, An
             "outputs_dir": "outputs",
             "asr_srt": "outputs/asr/zh_raw.srt",
             "cleaned_srt": "outputs/cleaned/zh_cleaned.srt",
-            "merged_before_critic_srt": "outputs/merged/zh_merged_before_critic.srt",
             "corrected_srt": "outputs/critic/zh_corrected.srt",
-            "merged_after_critic_srt": "outputs/merged/zh_merged_after_critic.srt",
             "translated_srt": "outputs/translated/en_translated.srt",
             "final_srt": "outputs/final/en_final.srt",
             "tts_segments_dir": "outputs/tts_segments",

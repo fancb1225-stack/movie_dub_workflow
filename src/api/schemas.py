@@ -66,7 +66,6 @@ class SpeakerResponse(BaseModel):
 
 
 class PackageVideoRequest(BaseModel):
-    audio_path: str | None = None
     output_filename: str = "final_en.mp4"
 
 
@@ -121,3 +120,16 @@ class OpenDirectoryResponse(BaseModel):
     job_id: str
     job_dir: str
     opened: bool
+
+
+class JobListItem(BaseModel):
+    job_id: str
+    status: str
+    original_filename: str
+    input_kind: str
+    created_at: str
+
+
+class JobListResponse(BaseModel):
+    jobs: list[JobListItem]
+    total: int

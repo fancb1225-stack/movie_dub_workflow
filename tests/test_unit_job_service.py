@@ -37,6 +37,18 @@ class JobServiceTests(unittest.TestCase):
             self.assertTrue(Path(job["paths"]["input"]).exists())
             self.assertTrue((Path(job["paths"]["job_dir"]) / "job.json").exists())
 
+    def test_create_job_from_wav_upload_writes_input_and_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = JobService(_config(tmp))
+            upload = FakeUpload("voice.wav", b"fake wav bytes")
+
+            job = asyncio.run(service.create_job_from_upload(upload))
+
+            self.assertEqual(job["status"], "created")
+            self.assertEqual(job["input_kind"], "wav")
+            self.assertEqual(Path(job["paths"]["input"]).name, "original.wav")
+            self.assertTrue(Path(job["paths"]["input"]).exists())
+
     def test_create_job_rejects_unsupported_suffix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service = JobService(_config(tmp))
@@ -60,6 +72,51 @@ class JobServiceTests(unittest.TestCase):
             self.assertEqual(updated["artifacts"]["source_audio_wav"], "a.wav")
             self.assertEqual(updated["reports"]["media_report"], "report.json")
 
+    def test_list_jobs_returns_all_created_jobs_sorted_desc(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = JobService(_config(tmp))
+            job_a = asyncio.run(service.create_job_from_upload(FakeUpload("a.mp4", b"x")))
+            job_b = asyncio.run(service.create_job_from_upload(FakeUpload("b.mp3", b"x")))
+            job_a["created_at"] = "2026-01-01T00:00:00+00:00"
+            job_b["created_at"] = "2026-01-01T00:00:01+00:00"
+            service.save_job(job_a)
+            service.save_job(job_b)
+
+            result = service.list_jobs()
+
+            self.assertEqual(result["total"], 2)
+            self.assertEqual(len(result["jobs"]), 2)
+            # Most recent first (job_b created after job_a)
+            self.assertEqual(result["jobs"][0]["job_id"], job_b["job_id"])
+            self.assertEqual(result["jobs"][1]["job_id"], job_a["job_id"])
+            # Each item contains expected fields
+            for item in result["jobs"]:
+                self.assertIn("job_id", item)
+                self.assertIn("status", item)
+                self.assertIn("original_filename", item)
+                self.assertIn("input_kind", item)
+                self.assertIn("created_at", item)
+
+    def test_list_jobs_returns_empty_when_no_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = JobService(_config(tmp))
+            result = service.list_jobs()
+            self.assertEqual(result["total"], 0)
+            self.assertEqual(result["jobs"], [])
+
+    def test_list_jobs_ignores_corrupted_job_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = JobService(_config(tmp))
+            job = asyncio.run(service.create_job_from_upload(FakeUpload("a.mp4", b"x")))
+            # Corrupt another job dir
+            bad_dir = Path(service.root_dir) / "badjob"
+            bad_dir.mkdir()
+            (bad_dir / "job.json").write_text("{invalid json", encoding="utf-8")
+
+            result = service.list_jobs()
+            self.assertEqual(result["total"], 1)
+            self.assertEqual(result["jobs"][0]["job_id"], job["job_id"])
+
 
 def _config(tmp: str) -> dict:
     return {
@@ -70,4 +127,3 @@ def _config(tmp: str) -> dict:
 
 if __name__ == "__main__":
     unittest.main()
-

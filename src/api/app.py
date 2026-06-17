@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -9,6 +10,12 @@ from src.api.routes import router
 from src.api.schemas import HealthResponse
 from src.config import load_config
 from src.llm_client import load_dotenv_if_present
+
+logging.basicConfig(
+    level=logging.ERROR,
+    format="%(asctime)s %(levelname)-8s %(name)-20s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 
 def create_app() -> FastAPI:

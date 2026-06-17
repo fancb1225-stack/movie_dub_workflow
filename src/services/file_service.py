@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,52 @@ class FileService:
         if not target.exists() or not target.is_file():
             raise FileNotFoundError(f"Job file not found: {relative_path}")
         return target
+
+    def create_artifact_archive(self, job_id: str) -> Path:
+        """Create a ZIP archive of all artifacts, excluding reports/ and job.json."""
+        job = self.jobs.get_job(job_id)
+        job_dir = Path(job["paths"]["job_dir"]).resolve()
+
+        EXCLUDED_DIRS = {"reports"}
+        EXCLUDED_FILES = {"job.json"}
+        EXCLUDED_PATTERNS = {"artifacts_"}
+
+        archive_path = job_dir / f"artifacts_{job_id[:8]}.zip"
+
+        # Check if archive can be reused
+        if archive_path.exists():
+            archive_mtime = archive_path.stat().st_mtime
+            needs_rebuild = False
+            for file_path in job_dir.rglob("*"):
+                if not file_path.is_file():
+                    continue
+                relative = file_path.relative_to(job_dir)
+                if relative.parts[0] in EXCLUDED_DIRS:
+                    continue
+                if relative.name in EXCLUDED_FILES:
+                    continue
+                if any(p in relative.name for p in EXCLUDED_PATTERNS):
+                    continue
+                if file_path.stat().st_mtime > archive_mtime:
+                    needs_rebuild = True
+                    break
+            if not needs_rebuild:
+                return archive_path
+
+        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_path in sorted(job_dir.rglob("*")):
+                if not file_path.is_file():
+                    continue
+                relative = file_path.relative_to(job_dir)
+                # Skip excluded items
+                if relative.parts[0] in EXCLUDED_DIRS:
+                    continue
+                if relative.name in EXCLUDED_FILES:
+                    continue
+                if any(p in relative.name for p in EXCLUDED_PATTERNS):
+                    continue
+                zf.write(file_path, relative)
+        return archive_path
 
 
 def _file_entry(job_id: str, job_dir: Path, path: Path) -> dict[str, Any]:

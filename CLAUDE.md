@@ -11,6 +11,7 @@
 
 ## Python 与依赖管理
 
+
 - 使用项目 venv：`.venv\Scripts\python.exe`。
 - 包管理优先使用 `uv`，备选 `pip`。
 - 文件路径统一从 `config.yaml` 读取。
@@ -58,7 +59,6 @@ outputs/jobs/<job_id>/
 6. 不要用 LLM 做媒体处理。
 7. 不要把 tools 暴露给 LLM。
 8. 不要实现 ReAct Agent。
-9. 本阶段不要实现 Web 前端。
 
 ## TDD 开发规范
 
@@ -71,6 +71,7 @@ outputs/jobs/<job_id>/
 5. 能用纯函数测试覆盖的逻辑，不要只依赖端到端测试。
 6. FastAPI 路由测试属于集成 smoke test；service 和 tools 必须有不依赖 Web 框架的单元测试。
 7. 每次完成开发至少运行：
+8. 涉及调用LLM的单元测试, 必须真正调用LLM进行测试
 
 ```bash
 .venv\Scripts\python.exe -m unittest discover -s tests -p "test_unit_*.py"

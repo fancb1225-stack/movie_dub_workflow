@@ -1,12 +1,12 @@
 paths:
   input_mp3: input/input.mp3
+  input_video: ""
   background_mp3: input/background.mp3
   outputs_dir: outputs
   asr_srt: outputs/asr/zh_raw.srt
+  merged_asr_srt: outputs/merged/zh_asr_merged.srt
   cleaned_srt: outputs/cleaned/zh_cleaned.srt
-  merged_before_critic_srt: outputs/merged/zh_merged_before_critic.srt
   corrected_srt: outputs/critic/zh_corrected.srt
-  merged_after_critic_srt: outputs/merged/zh_merged_after_critic.srt
   translated_srt: outputs/translated/en_translated.srt
   final_srt: outputs/final/en_final.srt
   tts_segments_dir: outputs/tts_segments
@@ -70,6 +70,8 @@ llm:
 
 translation:
   allow_mock_fallback: false
+  chunk_size: 20
+  max_parallel_chunks: 3
 
 srt:
   merge_max_chars: 38
@@ -79,6 +81,7 @@ srt:
 tts:
   provider: edge_tts
   voice: en-US-AriaNeural
+  rate: "+30%"
   sample_rate: 24000
   words_per_minute: 155
   max_retries: 1
@@ -86,7 +89,7 @@ tts:
 duration:
   max_overrun_ms: 350
   max_ratio: 1.12
-  max_reflection_rounds: 1
+  max_reflection_rounds: 0
 
 audio:
   mix_background: false

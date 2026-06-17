@@ -100,16 +100,18 @@
     }
 
     main {
-      max-width: 1180px;
+      max-width: 1420px;
       width: 100%;
       margin: 0 auto;
       padding: 24px 20px 36px;
       display: grid;
-      grid-template-columns: minmax(300px, 380px) 1fr;
+      grid-template-columns: minmax(280px, 320px) minmax(640px, 1fr);
       gap: 18px;
+      align-items: start;
     }
 
-    .stack {
+    .stack,
+    .right-stack {
       display: grid;
       gap: 18px;
       align-content: start;
@@ -155,7 +157,7 @@
 
     .button-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
     }
 
@@ -228,18 +230,40 @@
 
     .timeline {
       display: grid;
-      gap: 8px;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 18px;
+      align-items: stretch;
     }
 
     .step {
+      position: relative;
       display: grid;
-      grid-template-columns: 28px 1fr auto;
-      gap: 10px;
+      grid-template-rows: 28px auto auto;
+      gap: 6px;
+      justify-items: center;
       align-items: center;
-      padding: 10px;
+      text-align: center;
+      padding: 10px 8px;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #fbfcfa;
+      min-width: 0;
+    }
+
+    .step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -18px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 18px;
+      display: grid;
+      place-items: center;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 900;
+      line-height: 1;
     }
 
     .step-mark {
@@ -267,12 +291,57 @@
     .step-name {
       font-weight: 730;
       font-size: 13px;
+      min-width: 0;
     }
 
     .step-value {
       color: var(--muted);
       font-size: 12px;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .workflow-substeps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .workflow-substep {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 8px 10px;
+      display: grid;
+      gap: 4px;
+      font-size: 12px;
+    }
+
+    .workflow-substep .substep-name {
+      font-weight: 730;
+    }
+
+    .workflow-substep .substep-status {
+      color: var(--muted);
+    }
+
+    .workflow-substep.running {
+      border-color: #9fd4ca;
+      background: #f0fbf8;
+    }
+
+    .workflow-substep.done {
+      border-color: #bbdfc4;
+      background: #f3fbf5;
+      color: var(--ok);
+    }
+
+    .workflow-substep.error {
+      border-color: #f4b7b2;
+      background: #fff5f4;
+      color: var(--danger);
     }
 
     .result-pane {
@@ -382,10 +451,183 @@
       font-size: 12px;
     }
 
+    /* ---- Modal ---- */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.38);
+      z-index: 100;
+      place-items: center;
+    }
+
+    .modal-overlay.active {
+      display: grid;
+    }
+
+    .modal-card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+      width: min(520px, 92vw);
+      max-height: 80vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 720;
+    }
+
+    .modal-close {
+      width: 30px;
+      height: 30px;
+      border: none;
+      background: transparent;
+      font-size: 20px;
+      cursor: pointer;
+      color: var(--muted);
+      display: inline-grid;
+      place-items: center;
+      border-radius: 6px;
+      padding: 0;
+      min-height: 0;
+    }
+
+    .modal-close:hover {
+      background: #edf0ed;
+    }
+
+    .modal-body {
+      padding: 12px 20px 16px;
+      overflow: auto;
+    }
+
+    .setting-form {
+      display: grid;
+      gap: 16px;
+    }
+
+    .setting-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .setting-row label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .setting-row input[type="number"] {
+      width: 120px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      text-align: right;
+    }
+
+    .setting-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .job-list-empty {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 20px 0;
+      text-align: center;
+    }
+
+    .job-list-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+
+    .job-list-item:hover {
+      background: #f0f6f2;
+      border-color: var(--accent);
+    }
+
+    .job-list-item .job-filename {
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .job-list-item .job-meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .job-list-item .job-id-short {
+      font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    @media (max-width: 1180px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      .timeline {
+        grid-template-columns: 1fr;
+        gap: 0;
+      }
+
+      .step {
+        grid-template-columns: 28px 1fr auto;
+        grid-template-rows: auto;
+        justify-items: stretch;
+        text-align: left;
+        margin-bottom: 18px;
+      }
+
+      .step:not(:last-child)::after {
+        content: "↓";
+        left: 23px;
+        right: auto;
+        top: auto;
+        bottom: -18px;
+        transform: none;
+      }
+    }
+
     @media (max-width: 860px) {
       .topbar,
       main {
         grid-template-columns: 1fr;
+      }
+
+      .button-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
       .api-row {
@@ -419,7 +661,7 @@
           </div>
           <div class="panel-body">
             <div class="upload-box">
-              <input id="fileInput" type="file" accept=".mp4,.mp3,video/mp4,audio/mpeg">
+              <input id="fileInput" type="file" accept=".mp4,.mp3,.wav,video/mp4,audio/mpeg,audio/wav,audio/x-wav">
               <button id="uploadBtn" class="primary wide" type="button">创建任务</button>
             </div>
             <div class="meta-list">
@@ -427,41 +669,7 @@
               <div class="meta"><strong>状态</strong><span id="jobStatus">-</span></div>
               <div class="meta"><strong>输入类型</strong><span id="inputKind">-</span></div>
             </div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-head">
-            <h2 class="panel-title">功能操作</h2>
-          </div>
-          <div class="panel-body">
-            <div class="button-grid">
-              <button id="probeBtn" type="button" disabled>媒体文件信息</button>
-              <button id="extractBtn" type="button" disabled>提取音频</button>
-              <button id="separateBtn" type="button" disabled>分离人声与背景音</button>
-              <button id="speakersBtn" type="button" disabled>说话人识别</button>
-              <button id="langgraphBtn" type="button" disabled>翻译与配音工作流</button>
-              <button id="packageBtn" type="button" disabled>合成最终视频</button>
-            </div>
-            <input id="audioPath" type="text" placeholder="封装用音频路径，留空时使用已提取音频">
-            <div id="message" class="toast">就绪。</div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-head">
-            <h2 class="panel-title">功能使用简介</h2>
-          </div>
-          <div class="panel-body help">
-            <p>推荐顺序：上传 MP4/MP3 新建任务，然后依次执行媒体文件信息、提取音频、分离人声与背景音、翻译与配音工作流。需要生成最终视频时，再执行合成最终视频。</p>
-            <ul>
-              <li><strong>新建任务：</strong>上传 MP4/MP3 创建独立 job 工作区。</li>
-              <li><strong>媒体文件信息：</strong>读取音视频流、时长和格式信息。</li>
-              <li><strong>提取音频：</strong>从 MP4/MP3 得到标准 WAV。</li>
-              <li><strong>分离人声与背景音：</strong>调用本地 Demucs，生成 vocals.wav 和 background.wav。</li>
-              <li><strong>翻译与配音工作流：</strong>使用当前 job 的 vocals.wav 执行 ASR、字幕清洗合并、LLM 校对、摘要、翻译、TTS、时长检测和最终音频合并；页面触发时默认不再静默使用 mock ASR。</li>
-              <li><strong>合成最终视频：</strong>复制原视频流，并用指定音频替换原音轨；不会自动烧录字幕或自动混入背景音。</li>
-            </ul>
+            <button id="openJobBtn" type="button">打开之前任务</button>
           </div>
         </div>
 
@@ -481,8 +689,10 @@
             </div>
           </div>
         </div>
+      </section>
 
-        <div class="panel">
+      <section class="right-stack">
+        <section class="panel">
           <div class="panel-head">
             <h2 class="panel-title">处理进度</h2>
           </div>
@@ -490,16 +700,31 @@
             <div class="timeline">
               <div id="stepUpload" class="step"><span class="step-mark">1</span><span class="step-name">新建任务</span><span class="step-value">等待</span></div>
               <div id="stepProbe" class="step"><span class="step-mark">2</span><span class="step-name">媒体文件信息</span><span class="step-value">等待</span></div>
-              <div id="stepExtract" class="step"><span class="step-mark">3</span><span class="step-name">提取音频</span><span class="step-value">等待</span></div>
-              <div id="stepSeparate" class="step"><span class="step-mark">4</span><span class="step-name">分离人声与背景音</span><span class="step-value">等待</span></div>
-              <div id="stepLangGraph" class="step"><span class="step-mark">5</span><span class="step-name">翻译与配音工作流</span><span class="step-value">等待</span></div>
-              <div id="stepPackage" class="step"><span class="step-mark">6</span><span class="step-name">合成最终视频</span><span class="step-value">等待</span></div>
+              <div id="stepPreprocess" class="step"><span class="step-mark">3</span><span class="step-name">预处理</span><span class="step-value">等待</span></div>
+              <div id="stepLangGraph" class="step"><span class="step-mark">4</span><span class="step-name">翻译与配音工作流</span><span class="step-value">等待</span></div>
             </div>
+            <div id="preprocessSubsteps" class="workflow-substeps"></div>
+            <div id="workflowSubsteps" class="workflow-substeps"></div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="panel result-pane">
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">功能操作</h2>
+          </div>
+          <div class="panel-body">
+            <div class="button-grid">
+              <button id="probeBtn" type="button" disabled>媒体文件信息</button>
+              <button id="preprocessBtn" type="button" disabled>预处理</button>
+              <button id="langgraphBtn" type="button" disabled>翻译与配音工作流</button>
+              <button id="resumeBtn" type="button" disabled style="display:none">恢复工作流</button>
+              <button id="downloadArtifactsBtn" type="button" disabled style="display:none">下载产物</button>
+            </div>
+            <div id="message" class="toast">就绪。</div>
+          </div>
+        </section>
+
+        <section class="panel result-pane">
         <div class="panel-head">
           <h2 class="panel-title">接口响应</h2>
           <div class="small-actions">
@@ -508,14 +733,63 @@
           </div>
         </div>
         <pre id="output">{}</pre>
+        </section>
       </section>
     </main>
+  </div>
+
+  <!-- Modal: 打开之前任务 -->
+  <div id="jobListModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>选择任务</h3>
+        <button id="modalCloseBtn" class="modal-close" type="button">&times;</button>
+      </div>
+      <div class="modal-body" id="jobListContent">
+        <div class="job-list-empty">加载中...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: 工作流参数设置 -->
+  <div id="workflowSettingsModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>翻译与配音工作流 · 参数设置</h3>
+        <button id="settingsCloseBtn" class="modal-close" type="button">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="setting-form">
+          <div class="setting-row">
+            <label for="settingMaxReflectionRounds">时长反思修正最大轮次</label>
+            <input id="settingMaxReflectionRounds" type="number" min="0" max="20" step="1" value="0">
+          </div>
+          <div class="setting-row">
+            <label for="settingLlmTimeout">LLM 超时时长（秒）</label>
+            <input id="settingLlmTimeout" type="number" min="10" max="3600" step="10" value="600">
+          </div>
+          <div class="setting-row">
+            <label for="settingLlmMaxRetries">LLM 最大重试次数</label>
+            <input id="settingLlmMaxRetries" type="number" min="0" max="10" step="1" value="0">
+          </div>
+          <div class="setting-row">
+            <label for="settingTtsRate">TTS 语速</label>
+            <input id="settingTtsRate" type="number" min="0.5" max="3.0" step="0.1" value="1.3">
+          </div>
+          <div class="setting-actions">
+            <button id="settingsCancelBtn" type="button">取消</button>
+            <button id="settingsConfirmBtn" class="primary" type="button">确认运行</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
     const state = {
       job: null,
-      last: null
+      last: null,
+      jobList: []
     };
 
     const els = {
@@ -529,13 +803,12 @@
       inputKind: document.getElementById('inputKind'),
       message: document.getElementById('message'),
       output: document.getElementById('output'),
-      audioPath: document.getElementById('audioPath'),
       probeBtn: document.getElementById('probeBtn'),
-      extractBtn: document.getElementById('extractBtn'),
-      separateBtn: document.getElementById('separateBtn'),
-      speakersBtn: document.getElementById('speakersBtn'),
+      preprocessBtn: document.getElementById('preprocessBtn'),
       langgraphBtn: document.getElementById('langgraphBtn'),
-      packageBtn: document.getElementById('packageBtn'),
+      resumeBtn: document.getElementById('resumeBtn'),
+      downloadArtifactsBtn: document.getElementById('downloadArtifactsBtn'),
+      openJobBtn: document.getElementById('openJobBtn'),
       openDirBtn: document.getElementById('openDirBtn'),
       refreshFilesBtn: document.getElementById('refreshFilesBtn'),
       refreshBtn: document.getElementById('refreshBtn'),
@@ -543,13 +816,24 @@
       jobDir: document.getElementById('jobDir'),
       fileCount: document.getElementById('fileCount'),
       fileList: document.getElementById('fileList'),
+      preprocessSubsteps: document.getElementById('preprocessSubsteps'),
+      workflowSubsteps: document.getElementById('workflowSubsteps'),
+      jobListModal: document.getElementById('jobListModal'),
+      jobListContent: document.getElementById('jobListContent'),
+      modalCloseBtn: document.getElementById('modalCloseBtn'),
+      workflowSettingsModal: document.getElementById('workflowSettingsModal'),
+      settingsCloseBtn: document.getElementById('settingsCloseBtn'),
+      settingsCancelBtn: document.getElementById('settingsCancelBtn'),
+      settingsConfirmBtn: document.getElementById('settingsConfirmBtn'),
+      settingMaxReflectionRounds: document.getElementById('settingMaxReflectionRounds'),
+      settingLlmTimeout: document.getElementById('settingLlmTimeout'),
+      settingLlmMaxRetries: document.getElementById('settingLlmMaxRetries'),
+      settingTtsRate: document.getElementById('settingTtsRate'),
       steps: {
         upload: document.getElementById('stepUpload'),
         probe: document.getElementById('stepProbe'),
-        extract: document.getElementById('stepExtract'),
-        separate: document.getElementById('stepSeparate'),
-        langgraph: document.getElementById('stepLangGraph'),
-        package: document.getElementById('stepPackage')
+        preprocess: document.getElementById('stepPreprocess'),
+        langgraph: document.getElementById('stepLangGraph')
       }
     };
 
@@ -591,11 +875,8 @@
       const enabled = Boolean(job);
       for (const button of [
         els.probeBtn,
-        els.extractBtn,
-        els.separateBtn,
-        els.speakersBtn,
+        els.preprocessBtn,
         els.langgraphBtn,
-        els.packageBtn,
         els.openDirBtn,
         els.refreshFilesBtn,
         els.refreshBtn
@@ -604,6 +885,13 @@
       }
       if (job) {
         setStep('upload', job.status, 'done');
+        // 恢复按钮：仅在 langgraph_failed 时显示
+        els.resumeBtn.style.display = (job.status === 'langgraph_failed') ? '' : 'none';
+        els.resumeBtn.disabled = (job.status !== 'langgraph_failed');
+        // 下载产物按钮：在有产物时显示
+        const hasArtifacts = job.artifacts && Object.keys(job.artifacts).length > 0;
+        els.downloadArtifactsBtn.style.display = hasArtifacts ? '' : 'none';
+        els.downloadArtifactsBtn.disabled = !hasArtifacts;
       }
     }
 
@@ -627,7 +915,7 @@
         if (isFailureStatus(data.status)) {
           setStep(stepName, data.status || '失败', 'error');
           setMessage(
-            data.hint || data.error || `${label}失败。请查看接口响应或工作目录报告。`,
+            data.hint || data.error || data.warning || `${label}失败。请查看接口响应或工作目录报告。`,
             'error'
           );
         } else {
@@ -699,6 +987,68 @@
         .replace(/'/g, '&#039;');
     }
 
+    // ---- Modal: 打开之前任务 ----
+    function openJobListModal() {
+      els.jobListModal.classList.add('active');
+      loadJobList();
+    }
+
+    function closeJobListModal() {
+      els.jobListModal.classList.remove('active');
+    }
+
+    async function loadJobList() {
+      els.jobListContent.innerHTML = '<div class="job-list-empty">加载中...</div>';
+      try {
+        const data = await requestJson('/api/jobs');
+        state.jobList = data.jobs || [];
+        if (!state.jobList.length) {
+          els.jobListContent.innerHTML = '<div class="job-list-empty">暂无历史任务。</div>';
+          return;
+        }
+        els.jobListContent.innerHTML = state.jobList.map((job) => `
+          <div class="job-list-item" data-job-id="${escapeHtml(job.job_id)}">
+            <div>
+              <div class="job-filename">${escapeHtml(job.original_filename)}</div>
+              <div class="job-meta">${escapeHtml(job.input_kind)} · ${escapeHtml(job.status)} · ${formatDate(job.created_at)}</div>
+            </div>
+            <span class="job-id-short">${escapeHtml(job.job_id.slice(0, 8))}…</span>
+          </div>
+        `).join('');
+
+        // Bind click events
+        els.jobListContent.querySelectorAll('.job-list-item').forEach((item) => {
+          item.addEventListener('click', () => selectJobFromList(item.dataset.jobId));
+        });
+      } catch (error) {
+        els.jobListContent.innerHTML = `<div class="job-list-empty">加载失败：${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    async function selectJobFromList(jobId) {
+      try {
+        const job = await requestJson(`/api/jobs/${jobId}`);
+        updateJob(job);
+        setOutput(job);
+        await refreshFiles(false);
+        setMessage(`已切换到任务 ${job.original_filename}。`, 'ok');
+        closeJobListModal();
+      } catch (error) {
+        setMessage(error.message, 'error');
+      }
+    }
+
+    function formatDate(isoStr) {
+      if (!isoStr) return '-';
+      try {
+        const d = new Date(isoStr);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      } catch {
+        return isoStr.slice(0, 16);
+      }
+    }
+
+    // ---- Event bindings ----
     els.healthBtn.addEventListener('click', async () => {
       try {
         const data = await requestJson('/health');
@@ -744,47 +1094,353 @@
       () => requestJson(`/api/jobs/${state.job.job_id}/media/probe`)
     ));
 
-    els.extractBtn.addEventListener('click', () => runAction(
-      els.extractBtn,
-      'extract',
-      '提取音频',
-      () => requestJson(`/api/jobs/${state.job.job_id}/media/extract-audio`, { method: 'POST' })
-    ));
+    async function runPreprocessStreaming() {
+      if (!state.job) return;
+      els.preprocessBtn.disabled = true;
+      setStep('preprocess', '执行中');
+      setMessage('预处理执行中...');
+      try {
+        const response = await fetch(`${apiBase()}/api/jobs/${state.job.job_id}/preprocess/stream`, { method: 'POST' });
+        if (!response.ok || !response.body) {
+          throw new Error(response.statusText || '无法建立预处理进度流。');
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const blocks = buffer.split('\n\n');
+          buffer = blocks.pop() || '';
+          for (const block of blocks) {
+            for (const line of block.split('\n')) {
+              if (line.startsWith('data: ')) {
+                handlePreprocessEvent(JSON.parse(line.slice(6)));
+              }
+            }
+          }
+        }
+      } catch (error) {
+        setStep('preprocess', '失败', 'error');
+        setMessage(error.message, 'error');
+        setOutput({ error: error.message });
+      } finally {
+        els.preprocessBtn.disabled = !state.job;
+      }
+    }
 
-    els.separateBtn.addEventListener('click', () => runAction(
-      els.separateBtn,
-      'separate',
-      '分离人声与背景音',
-      () => requestJson(`/api/jobs/${state.job.job_id}/audio/separate`, { method: 'POST' })
-    ));
+    function handlePreprocessEvent(event) {
+      if (event.event === 'start') {
+        renderPreprocessSubsteps(event.steps || []);
+        setStep('preprocess', '执行中');
+        setMessage('预处理已开始。');
+        return;
+      }
+      if (event.event === 'progress') {
+        updatePreprocessSubstep(event.node, 'done', event.label, '完成');
+        markNextPreprocessSubstepRunning(event.node);
+        setStep('preprocess', `${event.index || ''}/${event.total || ''}`);
+        setOutput(event);
+        return;
+      }
+      if (event.event === 'done') {
+        markAllPreprocessSubstepsDone();
+        setStep('preprocess', '完成', 'done');
+        setMessage('预处理完成。可以运行翻译与配音工作流。', 'ok');
+        refreshJob(false).catch(() => {});
+        refreshFiles(false).catch(() => {});
+        return;
+      }
+      if (event.event === 'error') {
+        setStep('preprocess', '失败', 'error');
+        setMessage(event.hint || event.error || '预处理失败。', 'error');
+        setOutput(event);
+      }
+    }
 
-    els.speakersBtn.addEventListener('click', () => runAction(
-      els.speakersBtn,
-      'speakers',
-      '说话人识别',
-      () => requestJson(`/api/jobs/${state.job.job_id}/speakers/identify`, { method: 'POST' })
-    ));
+    function renderPreprocessSubsteps(steps) {
+      els.preprocessSubsteps.innerHTML = steps.map((step) => `
+        <div class="workflow-substep" data-node="${escapeHtml(step.node)}">
+          <span class="substep-name">${escapeHtml(step.label)}</span>
+          <span class="substep-status">等待</span>
+        </div>
+      `).join('');
+      const first = els.preprocessSubsteps.querySelector('.workflow-substep');
+      if (first) first.classList.add('running');
+      if (first) first.querySelector('.substep-status').textContent = '进行中';
+    }
 
-    els.langgraphBtn.addEventListener('click', () => runAction(
-      els.langgraphBtn,
-      'langgraph',
-      '翻译与配音工作流',
-      () => requestJson(`/api/jobs/${state.job.job_id}/workflow/langgraph`, { method: 'POST' })
-    ));
+    function updatePreprocessSubstep(node, kind, label, status) {
+      const item = els.preprocessSubsteps.querySelector(`[data-node="${CSS.escape(node)}"]`);
+      if (!item) return;
+      item.classList.remove('running', 'done', 'error');
+      item.classList.add(kind);
+      item.querySelector('.substep-status').textContent = status || label || '';
+    }
 
-    els.packageBtn.addEventListener('click', () => runAction(
-      els.packageBtn,
-      'package',
-      '合成最终视频',
-      () => requestJson(`/api/jobs/${state.job.job_id}/video/package`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audio_path: els.audioPath.value.trim() || null,
-          output_filename: 'final_en.mp4'
-        })
-      })
-    ));
+    function markNextPreprocessSubstepRunning(node) {
+      const items = Array.from(els.preprocessSubsteps.querySelectorAll('.workflow-substep'));
+      const index = items.findIndex((item) => item.dataset.node === node);
+      const next = items[index + 1];
+      if (!next || next.classList.contains('done')) return;
+      next.classList.add('running');
+      next.querySelector('.substep-status').textContent = '进行中';
+    }
+
+    function markAllPreprocessSubstepsDone() {
+      els.preprocessSubsteps.querySelectorAll('.workflow-substep').forEach((item) => {
+        item.classList.remove('running', 'error');
+        item.classList.add('done');
+        item.querySelector('.substep-status').textContent = '完成';
+      });
+    }
+
+    els.preprocessBtn.addEventListener('click', runPreprocessStreaming);
+
+    async function runLanggraphStreaming() {
+      if (!state.job) return;
+      els.langgraphBtn.disabled = true;
+      setStep('langgraph', '执行中');
+      setMessage('翻译与配音工作流执行中...');
+      try {
+        const response = await fetch(`${apiBase()}/api/jobs/${state.job.job_id}/workflow/langgraph/stream`, { method: 'POST' });
+        if (!response.ok || !response.body) {
+          throw new Error(response.statusText || '无法建立工作流进度流。');
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const blocks = buffer.split('\n\n');
+          buffer = blocks.pop() || '';
+          for (const block of blocks) {
+            for (const line of block.split('\n')) {
+              if (line.startsWith('data: ')) {
+                handleWorkflowEvent(JSON.parse(line.slice(6)));
+              }
+            }
+          }
+        }
+      } catch (error) {
+        setStep('langgraph', '失败', 'error');
+        setMessage(error.message, 'error');
+        setOutput({ error: error.message });
+      } finally {
+        els.langgraphBtn.disabled = !state.job;
+      }
+    }
+
+    async function runLanggraphResumeStreaming() {
+      if (!state.job) return;
+      const overrides = getWorkflowOverrides();
+      els.resumeBtn.disabled = true;
+      setStep('langgraph', '恢复中');
+      setMessage('正在恢复工作流...');
+      try {
+        const params = new URLSearchParams();
+        params.set('max_reflection_rounds', overrides.max_reflection_rounds);
+        params.set('llm_timeout', overrides.llm_timeout);
+        params.set('llm_max_retries', overrides.llm_max_retries);
+        params.set('tts_rate', overrides.tts_rate);
+        const response = await fetch(`${apiBase()}/api/jobs/${state.job.job_id}/workflow/langgraph/resume/stream?${params.toString()}`, { method: 'POST' });
+        if (!response.ok || !response.body) {
+          throw new Error(response.statusText || '无法建立工作流恢复流。');
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const blocks = buffer.split('\n\n');
+          buffer = blocks.pop() || '';
+          for (const block of blocks) {
+            for (const line of block.split('\n')) {
+              if (line.startsWith('data: ')) {
+                handleWorkflowEvent(JSON.parse(line.slice(6)));
+              }
+            }
+          }
+        }
+      } catch (error) {
+        setStep('langgraph', '恢复失败', 'error');
+        setMessage(error.message, 'error');
+        setOutput({ error: error.message });
+      } finally {
+        els.resumeBtn.disabled = false;
+      }
+    }
+
+    async function runLanggraphStreamingWithOverrides() {
+      if (!state.job) return;
+      const overrides = getWorkflowOverrides();
+      els.langgraphBtn.disabled = true;
+      setStep('langgraph', '执行中');
+      setMessage('翻译与配音工作流执行中...');
+      try {
+        const params = new URLSearchParams();
+        params.set('max_reflection_rounds', overrides.max_reflection_rounds);
+        params.set('llm_timeout', overrides.llm_timeout);
+        params.set('llm_max_retries', overrides.llm_max_retries);
+        params.set('tts_rate', overrides.tts_rate);
+        const response = await fetch(`${apiBase()}/api/jobs/${state.job.job_id}/workflow/langgraph/stream?${params.toString()}`, { method: 'POST' });
+        if (!response.ok || !response.body) {
+          throw new Error(response.statusText || '无法建立工作流进度流。');
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const blocks = buffer.split('\n\n');
+          buffer = blocks.pop() || '';
+          for (const block of blocks) {
+            for (const line of block.split('\n')) {
+              if (line.startsWith('data: ')) {
+                handleWorkflowEvent(JSON.parse(line.slice(6)));
+              }
+            }
+          }
+        }
+      } catch (error) {
+        setStep('langgraph', '失败', 'error');
+        setMessage(error.message, 'error');
+        setOutput({ error: error.message });
+      } finally {
+        els.langgraphBtn.disabled = !state.job;
+      }
+    }
+
+    function handleWorkflowEvent(event) {
+      if (event.event === 'start') {
+        renderWorkflowSubsteps(event.steps || []);
+        setStep('langgraph', '执行中');
+        setMessage('工作流已开始。');
+        return;
+      }
+      if (event.event === 'progress') {
+        updateWorkflowSubstep(event.node, 'done', event.label, '完成');
+        markNextWorkflowSubstepRunning(event.node);
+        setStep('langgraph', `${event.index || ''}/${event.total || ''}`);
+        setOutput(event);
+        return;
+      }
+      if (event.event === 'done') {
+        markAllWorkflowSubstepsDone();
+        setStep('langgraph', '完成', 'done');
+        setOutput(event.report || event);
+        setMessage('翻译与配音工作流完成。', 'ok');
+        refreshJob(false).catch(() => {});
+        refreshFiles(false).catch(() => {});
+        return;
+      }
+      if (event.event === 'error') {
+        setStep('langgraph', '失败', 'error');
+        setMessage(event.report?.hint || event.hint || event.report?.error || event.error || '工作流失败。', 'error');
+        setOutput(event.report || event);
+      }
+    }
+
+    function renderWorkflowSubsteps(steps) {
+      els.workflowSubsteps.innerHTML = steps.map((step) => `
+        <div class="workflow-substep" data-node="${escapeHtml(step.node)}">
+          <span class="substep-name">${escapeHtml(step.label)}</span>
+          <span class="substep-status">等待</span>
+        </div>
+      `).join('');
+      const first = els.workflowSubsteps.querySelector('.workflow-substep');
+      if (first) first.classList.add('running');
+      if (first) first.querySelector('.substep-status').textContent = '进行中';
+    }
+
+    function updateWorkflowSubstep(node, kind, label, status) {
+      const item = els.workflowSubsteps.querySelector(`[data-node="${CSS.escape(node)}"]`);
+      if (!item) return;
+      item.classList.remove('running', 'done', 'error');
+      item.classList.add(kind);
+      item.querySelector('.substep-status').textContent = status || label || '';
+    }
+
+    function markNextWorkflowSubstepRunning(node) {
+      const items = Array.from(els.workflowSubsteps.querySelectorAll('.workflow-substep'));
+      const index = items.findIndex((item) => item.dataset.node === node);
+      const next = items[index + 1];
+      if (!next || next.classList.contains('done')) return;
+      next.classList.add('running');
+      next.querySelector('.substep-status').textContent = '进行中';
+    }
+
+    function markAllWorkflowSubstepsDone() {
+      els.workflowSubsteps.querySelectorAll('.workflow-substep').forEach((item) => {
+        item.classList.remove('running', 'error');
+        item.classList.add('done');
+        item.querySelector('.substep-status').textContent = '完成';
+      });
+    }
+
+    // ---- Modal: 工作流参数设置 ----
+    function openWorkflowSettingsModal(isResume = false) {
+      state._isResume = isResume;
+      els.workflowSettingsModal.classList.add('active');
+    }
+
+    function closeWorkflowSettingsModal() {
+      els.workflowSettingsModal.classList.remove('active');
+    }
+
+    function getWorkflowOverrides() {
+      return {
+        max_reflection_rounds: parseInt(els.settingMaxReflectionRounds.value, 10) || 0,
+        llm_timeout: parseInt(els.settingLlmTimeout.value, 10) || 600,
+        llm_max_retries: parseInt(els.settingLlmMaxRetries.value, 10) || 0,
+        tts_rate: parseFloat(els.settingTtsRate.value) || 1.3,
+      };
+    }
+
+    els.settingsCloseBtn.addEventListener('click', closeWorkflowSettingsModal);
+    els.settingsCancelBtn.addEventListener('click', closeWorkflowSettingsModal);
+    els.workflowSettingsModal.addEventListener('click', (e) => {
+      if (e.target === els.workflowSettingsModal) closeWorkflowSettingsModal();
+    });
+    els.settingsConfirmBtn.addEventListener('click', () => {
+      closeWorkflowSettingsModal();
+      if (state._isResume) {
+        runLanggraphResumeStreaming();
+      } else {
+        runLanggraphStreamingWithOverrides();
+      }
+    });
+
+    els.langgraphBtn.addEventListener('click', () => {
+      openWorkflowSettingsModal(false);
+    });
+
+    // 恢复工作流按钮
+    els.resumeBtn.addEventListener('click', () => {
+      openWorkflowSettingsModal(true);
+    });
+
+    // 下载产物按钮
+    els.downloadArtifactsBtn.addEventListener('click', () => {
+      if (!state.job) return;
+      window.open(`${apiBase()}/api/jobs/${state.job.job_id}/artifacts/download`, '_blank');
+    });
+
+    // 打开之前任务按钮
+    els.openJobBtn.addEventListener('click', openJobListModal);
+
+    // 模态框关闭
+    els.modalCloseBtn.addEventListener('click', closeJobListModal);
+    els.jobListModal.addEventListener('click', (e) => {
+      if (e.target === els.jobListModal) closeJobListModal();
+    });
 
     els.refreshBtn.addEventListener('click', () => refreshJob(true).catch((error) => {
       setMessage(error.message, 'error');

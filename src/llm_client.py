@@ -56,7 +56,10 @@ class LLMClient:
         raise RuntimeError(f"LLM request failed: {last_error}") from last_error
 
     def _chat_completion(self, system_prompt: str, user_content: str) -> str:
-        url = f"{self.settings.base_url}/chat/completions"
+        base = self.settings.base_url.rstrip("/")
+        if base.endswith("/chat/completions"):
+            base = base[: -len("/chat/completions")]
+        url = f"{base}/chat/completions"
         payload = {
             "model": self.settings.model,
             "messages": [
@@ -80,7 +83,12 @@ class LLMClient:
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"LLM HTTP {exc.code}: {detail}") from exc
-        data = json.loads(body)
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            raise RuntimeError(
+                f"LLM returned non-JSON response (first 500 chars): {body[:500]}"
+            )
         return str(data["choices"][0]["message"]["content"]).strip()
 
 

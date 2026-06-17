@@ -9,7 +9,8 @@ from src.config import config_path
 from src.tools.file_tools import ensure_dir, read_json, write_json
 
 
-ALLOWED_UPLOAD_SUFFIXES = {".mp4", ".mp3"}
+ALLOWED_UPLOAD_SUFFIXES = {".mp4", ".mp3", ".wav"}
+MAX_LIST_JOBS = 50
 
 
 class UploadFileLike(Protocol):
@@ -95,6 +96,30 @@ class JobService:
     def job_json_path(self, job_id: str) -> Path:
         return self.job_dir(job_id) / "job.json"
 
+    def list_jobs(self) -> dict[str, Any]:
+        """List all jobs, most recent first, up to MAX_LIST_JOBS entries."""
+        jobs: list[dict[str, Any]] = []
+        if not self.root_dir.exists():
+            return {"jobs": [], "total": 0}
+        for child in sorted(self.root_dir.iterdir(), key=_created_at_key, reverse=True):
+            json_path = child / "job.json"
+            if not json_path.exists():
+                continue
+            try:
+                data = read_json(json_path)
+            except Exception:
+                continue
+            jobs.append({
+                "job_id": data.get("job_id", ""),
+                "status": data.get("status", ""),
+                "original_filename": data.get("original_filename", ""),
+                "input_kind": data.get("input_kind", ""),
+                "created_at": data.get("created_at", ""),
+            })
+            if len(jobs) >= MAX_LIST_JOBS:
+                break
+        return {"jobs": jobs, "total": len(jobs)}
+
 
 async def _save_upload(file: UploadFileLike, path: Path) -> None:
     with path.open("wb") as writer:
@@ -103,3 +128,14 @@ async def _save_upload(file: UploadFileLike, path: Path) -> None:
             if not chunk:
                 break
             writer.write(chunk)
+
+
+def _created_at_key(child: Path) -> str:
+    """Extract created_at from job.json for sorting; fallback to empty string."""
+    json_path = child / "job.json"
+    if json_path.exists():
+        try:
+            return str(read_json(json_path).get("created_at", ""))
+        except Exception:
+            pass
+    return ""
