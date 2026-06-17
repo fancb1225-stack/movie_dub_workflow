@@ -66,6 +66,84 @@ def align_and_merge_segments(
     return report
 
 
+def align_and_merge_segments_simple(
+    cues: list[SrtCue],
+    segments: list[TtsSegment],
+    output_wav: str | Path,
+    output_mp3: str | Path,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """确定性普通对齐:无 LLM、无反思循环。
+
+    规则:
+    - 片段比 SRT 时间轴短 → 对齐到 cue 起点,尾部天然静音(画布预填 0)。
+    - 片段与上一个片段重叠 → 向前移动到不重叠位置,移动不超过
+      ``max_shift_forward_ms``(默认 1s);公式为
+      ``start_ms = max(0, min(cue_start - max_shift, prev_end))``。
+    - 前移后仍溢出 → 不截断,画布自动延长。
+    """
+    wav_path = ensure_parent(output_wav)
+    mp3_path = ensure_parent(output_mp3)
+    sample_rate = int(config.get("tts", {}).get("sample_rate", 24000))
+    alignment_config = config.get("alignment", {})
+    max_shift = int(alignment_config.get("max_shift_forward_ms", 1000))
+
+    max_cue_end = max((cue["end_ms"] for cue in cues), default=0)
+    canvas_ms = max(max_cue_end, 1000) + 500
+    canvas = array("h", [0]) * int(sample_rate * canvas_ms / 1000)
+
+    warnings: list[str] = []
+    placements: list[dict[str, Any]] = []
+    prev_end_ms = 0
+
+    for segment in segments:
+        if not segment.get("success"):
+            warnings.append(f"Skip failed TTS segment {segment.get('index')}")
+            continue
+        cue_start = int(segment.get("start_ms", 0))
+        duration = int(segment.get("duration_ms", 0))
+        try:
+            audio, segment_rate = _read_pcm_mono_16(segment["path"], config, sample_rate)
+            if segment_rate != sample_rate:
+                audio = _resample_nearest(audio, segment_rate, sample_rate)
+        except Exception as exc:
+            warnings.append(f"Skip unreadable TTS segment {segment.get('index')}: {exc}")
+            continue
+
+        if cue_start < prev_end_ms:
+            # 与上一个片段重叠 → 向前移动:min(cue_start - max_shift, prev_end)
+            start_ms = max(0, min(cue_start - max_shift, prev_end_ms))
+        else:
+            start_ms = cue_start
+
+        _mix_into_canvas(canvas, audio, start_ms, sample_rate)
+        prev_end_ms = start_ms + duration
+        placements.append(
+            {
+                "index": segment.get("index"),
+                "start_ms": start_ms,
+                "original_start_ms": cue_start,
+                "duration_ms": duration,
+                "shifted": start_ms != cue_start,
+            }
+        )
+
+    _write_wav(wav_path, canvas, sample_rate)
+    mp3_created_with = _export_mp3_or_copy(wav_path, mp3_path, config)
+    duration_ms = int(len(canvas) / sample_rate * 1000)
+    return {
+        "alignment_mode": "simple",
+        "narration_wav": str(wav_path),
+        "narration_mp3": str(mp3_path),
+        "sample_rate": sample_rate,
+        "duration_ms": duration_ms,
+        "segment_count": len(segments),
+        "mp3_created_with": mp3_created_with,
+        "warnings": warnings,
+        "placements": placements,
+    }
+
+
 def _build_alignment_summary(positions: list[AdjustedPosition]) -> dict[str, Any]:
     by_strategy: dict[str, int] = {}
     max_forward = 0

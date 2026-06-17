@@ -79,6 +79,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "allow_mock_fallback": False,
         "chunk_size": 20,
         "max_parallel_chunks": 3,
+        "chunk_max_retries": 3,
     },
     "srt": {
         "merge_max_chars": 38,
@@ -103,9 +104,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "background_volume": 0.18,
     },
     "alignment": {
+        "mode": "simple",
         "max_shift_back_overlap_ms": 200,
         "shift_back_gap_ms": 50,
         "enable_overlap_resolution": True,
+        "max_shift_forward_ms": 1000,
     },
 }
 

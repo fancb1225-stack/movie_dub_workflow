@@ -4,7 +4,7 @@ import logging
 
 from src.config import config_path
 from src.state import WorkflowState
-from src.tools.audio_tools import align_and_merge_segments
+from src.tools.audio_tools import align_and_merge_segments, align_and_merge_segments_simple
 from src.tools.file_tools import write_json, write_text
 
 logger = logging.getLogger(__name__)
@@ -15,13 +15,23 @@ def align_and_merge_audio(state: WorkflowState) -> WorkflowState:
     config = state["config"]
     final_srt = state.get("final_srt", "")
     write_text(config_path(config, "paths.final_srt"), final_srt)
-    audio_report = align_and_merge_segments(
-        state.get("final_cues", []),
-        state.get("tts_segments", []),
-        config_path(config, "paths.narration_wav"),
-        config_path(config, "paths.narration_mp3"),
-        config,
-    )
+    alignment_mode = str(config.get("alignment", {}).get("mode", "simple")).lower()
+    if alignment_mode == "overlap_resolution":
+        audio_report = align_and_merge_segments(
+            state.get("final_cues", []),
+            state.get("tts_segments", []),
+            config_path(config, "paths.narration_wav"),
+            config_path(config, "paths.narration_mp3"),
+            config,
+        )
+    else:
+        audio_report = align_and_merge_segments_simple(
+            state.get("final_cues", []),
+            state.get("tts_segments", []),
+            config_path(config, "paths.narration_wav"),
+            config_path(config, "paths.narration_mp3"),
+            config,
+        )
     pipeline_report = _build_pipeline_report(state, audio_report)
     report_path = config_path(config, "paths.reports_dir") / "pipeline_report.json"
     write_json(report_path, pipeline_report)

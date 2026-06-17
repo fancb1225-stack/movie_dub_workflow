@@ -34,8 +34,9 @@ def translate_to_english(state: WorkflowState) -> WorkflowState:
         used_fallback = True
         error = "LLM translation is disabled; mock fallback was explicitly allowed."
         translation_stats = _translation_stats(config, 1)
+        failed_chunks: list[int] = []
     else:
-        translated_cues, translation_stats = _translate_with_llm_chunks(
+        translated_cues, translation_stats, failed_chunks = _translate_with_llm_chunks(
             client, state, source_cues, config, allow_fallback, fallback_srt
         )
         used_fallback = False
@@ -58,6 +59,7 @@ def translate_to_english(state: WorkflowState) -> WorkflowState:
             "parallel": translation_stats["parallel"],
             "source_subtitle_count": len(source_cues),
             "output_subtitle_count": len(translated_cues),
+            "failed_chunks": failed_chunks,
             "error": error,
         },
     )
@@ -85,16 +87,21 @@ def _translate_with_llm_chunks(
     config: dict,
     allow_fallback: bool,
     fallback_srt: str,
-) -> tuple[list[SrtCue], dict[str, object]]:
+) -> tuple[list[SrtCue], dict[str, object], list[int]]:
     translation_config = config.get("translation", {})
     chunk_size = int(translation_config.get("chunk_size", 0))
     chunks = _split_cues(source_cues, chunk_size)
     max_parallel = max(1, int(translation_config.get("max_parallel_chunks", 1)))
     worker_count = min(max_parallel, max(1, len(chunks)))
     if len(chunks) == 1:
-        _, translated = _translate_chunk(client, state, chunks[0], 0, allow_fallback, fallback_srt)
+        idx, translated, failed = _translate_chunk(
+            client, state, chunks[0], 0, allow_fallback, fallback_srt, config
+        )
+        results = [(idx, translated)]
+        failed_chunks = [1] if failed else []
     else:
-        results: list[tuple[int, list[SrtCue]]] = []
+        raw: list[tuple[int, list[SrtCue]]] = []
+        failed_chunks: list[int] = []
         with ThreadPoolExecutor(max_workers=worker_count) as executor:
             futures = {
                 executor.submit(
@@ -105,15 +112,21 @@ def _translate_with_llm_chunks(
                     index,
                     allow_fallback,
                     fallback_srt,
+                    config,
                 ): index
                 for index, chunk in enumerate(chunks)
             }
             for future in as_completed(futures):
-                results.append(future.result())
-        translated = []
-        for _, chunk_cues in sorted(results, key=lambda item: item[0]):
-            translated.extend(chunk_cues)
-    return translated, _translation_stats(config, len(chunks))
+                index, translated, failed = future.result()
+                raw.append((index, translated))
+                if failed:
+                    failed_chunks.append(index + 1)
+        raw.sort(key=lambda item: item[0])
+        results = raw
+    translated = []
+    for _, chunk_cues in results:
+        translated.extend(chunk_cues)
+    return translated, _translation_stats(config, len(chunks)), sorted(failed_chunks)
 
 
 def _translate_chunk(
@@ -123,18 +136,41 @@ def _translate_chunk(
     chunk_index: int,
     allow_fallback: bool,
     fallback_srt: str,
-) -> tuple[int, list[SrtCue]]:
+    config: dict,
+) -> tuple[int, list[SrtCue], bool]:
+    """翻译单个分块，失败时按 chunk_max_retries 重试；耗尽后用源文本占位。
+
+    返回 (chunk_index, translated_cues, failed)。failed=True 表示该块最终用
+    源文本占位（条数与源一致，保证整体对齐），而非抛错中断整次翻译。
+    """
+    max_retries = int(config.get("translation", {}).get("chunk_max_retries", 3))
     chunk_srt = format_srt(chunk_cues)
-    translated_srt = client.complete(
-        TRANSLATE_TO_ENGLISH_SRT_PROMPT,
-        _build_translation_input(state, chunk_srt),
-        fallback_srt if allow_fallback else "",
+    last_error: Exception | None = None
+    for attempt in range(max_retries + 1):
+        translated_srt = client.complete(
+            TRANSLATE_TO_ENGLISH_SRT_PROMPT,
+            _build_translation_input(state, chunk_srt),
+            fallback_srt if allow_fallback else "",
+        )
+        try:
+            translated_cues = _parse_translation_or_raise(translated_srt, chunk_cues)
+            return chunk_index, translated_cues, False
+        except RuntimeError as exc:
+            last_error = exc
+            logger.warning(
+                "translate chunk %d attempt %d/%d failed: %s",
+                chunk_index + 1, attempt + 1, max_retries + 1, exc,
+            )
+    # 重试耗尽：用源文本占位，保证条数对齐，不中断整体翻译
+    logger.error(
+        "translate chunk %d exhausted retries (%s); falling back to source text",
+        chunk_index + 1, last_error,
     )
-    try:
-        translated_cues = _parse_translation_or_raise(translated_srt, chunk_cues)
-    except RuntimeError as exc:
-        raise RuntimeError(f"LLM translation chunk {chunk_index + 1} failed: {exc}") from exc
-    return chunk_index, translated_cues
+    placeholder = [
+        make_cue(cue["index"], cue["start_ms"], cue["end_ms"], cue["text"])
+        for cue in chunk_cues
+    ]
+    return chunk_index, placeholder, True
 
 
 def _split_cues(cues: list[SrtCue], chunk_size: int) -> list[list[SrtCue]]:

@@ -29,7 +29,8 @@ class TranslateNodeTests(unittest.TestCase):
             report = Path(result["reports"]["translation_report"])
             self.assertTrue(report.exists())
 
-    def test_translation_rejects_invalid_llm_srt(self) -> None:
+    def test_translation_falls_back_on_invalid_llm_srt(self) -> None:
+        """LLM 返回非 SRT → 重试耗尽后用源文本占位，不抛错，条数对齐。"""
         with tempfile.TemporaryDirectory() as temp_dir:
             state = _state(temp_dir, allow_mock_fallback=False)
             state["config"]["llm"] = {
@@ -39,6 +40,7 @@ class TranslateNodeTests(unittest.TestCase):
                 "timeout": 1,
                 "max_retries": 0,
             }
+            state["config"]["translation"]["chunk_max_retries"] = 1
 
             class FakeClient:
                 def enabled(self) -> bool:
@@ -50,8 +52,13 @@ class TranslateNodeTests(unittest.TestCase):
                     return "This is not an SRT response."
 
             with patch("src.nodes.translate_node.LLMClient.from_config", return_value=FakeClient()):
-                with self.assertRaisesRegex(RuntimeError, "translation output is invalid"):
-                    translate_to_english(state)
+                result = translate_to_english(state)
+
+            # 占位保留源文本，条数对齐
+            self.assertEqual(len(result["final_cues"]), 2)
+            self.assertEqual(result["final_cues"][0]["text"], "主角进入房间。")
+            report = Path(result["reports"]["translation_report"])
+            self.assertTrue(report.exists())
 
     def test_parallel_chunked_translation_calls_llm_per_chunk(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -74,20 +81,54 @@ class TranslateNodeTests(unittest.TestCase):
             self.assertTrue(report.exists())
             self.assertIn("Chunk", result["final_srt"])
 
-    def test_parallel_chunked_translation_rejects_bad_chunk(self) -> None:
+    def test_parallel_chunked_translation_retries_bad_chunk_then_succeeds(self) -> None:
+        """坏块重试成功：第 2 块首次返回 1 条(应 2)，重试后返回 2 条，整体不抛错。"""
         with tempfile.TemporaryDirectory() as temp_dir:
             state = _state_with_count(temp_dir, count=4, allow_mock_fallback=False)
             state["config"]["translation"]["chunk_size"] = 2
             state["config"]["translation"]["max_parallel_chunks"] = 2
+            state["config"]["translation"]["chunk_max_retries"] = 3
+            state["config"]["llm"] = _enabled_llm_config()
+            client = FakeRetryChunkClient(
+                [
+                    _translated_chunk("Good A", 2),  # chunk 1 一次成功
+                    [  # chunk 2: 首次坏，重试好
+                        _translated_chunk("Bad", 1),
+                        _translated_chunk("Good B", 2),
+                    ],
+                ]
+            )
+
+            with patch("src.nodes.translate_node.LLMClient.from_config", return_value=client):
+                result = translate_to_english(state)
+
+            self.assertEqual(len(result["final_cues"]), 4)
+            self.assertIn("Good B", result["final_srt"])
+
+    def test_parallel_chunked_translation_falls_back_when_chunk_keeps_failing(self) -> None:
+        """坏块重试耗尽仍失败 → 用源文本占位该块，不抛错，条数对齐，报告记录失败块。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = _state_with_count(temp_dir, count=4, allow_mock_fallback=False)
+            state["config"]["translation"]["chunk_size"] = 2
+            state["config"]["translation"]["max_parallel_chunks"] = 2
+            state["config"]["translation"]["chunk_max_retries"] = 2
             state["config"]["llm"] = _enabled_llm_config()
             client = FakeChunkClient([
                 _translated_chunk("Good", 2),
-                _translated_chunk("Bad", 1),
+                _translated_chunk("Bad", 1),  # chunk 2 始终坏
             ])
 
             with patch("src.nodes.translate_node.LLMClient.from_config", return_value=client):
-                with self.assertRaisesRegex(RuntimeError, "chunk 2.*expected 2.*got 1"):
-                    translate_to_english(state)
+                result = translate_to_english(state)
+
+            # 整体不抛错，4 条全部保留(chunk 2 用源文本占位)
+            self.assertEqual(len(result["final_cues"]), 4)
+            # chunk 2 的两条保留源文本
+            self.assertEqual(result["final_cues"][2]["text"], "第 3 条字幕。")
+            self.assertEqual(result["final_cues"][3]["text"], "第 4 条字幕。")
+            report = Path(result["reports"]["translation_report"])
+            report_data = __import__("json").loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(report_data["failed_chunks"], [2])
 
     def test_chunked_translation_preserves_source_timestamps(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -213,6 +254,35 @@ class FakeChunkClient:
         if index < len(self.responses):
             return self.responses[index]
         return self.responses[-1]
+
+
+class FakeRetryChunkClient:
+    """按 user_content 维护返回队列，支持同一块多次重试返回不同结果。
+
+    responses 元素为 str(单次返回)或 list[str](按重试顺序返回)。
+    """
+
+    def __init__(self, responses: list):
+        # 首次见到某 user_content 时，从 responses 按序取一个元素作为该块的队列
+        self._queues: dict[str, list[str]] = {}
+        self._pending = list(responses)
+        self._assignment_order: list[str] = []
+
+    def enabled(self) -> bool:
+        return True
+
+    def complete(self, system_prompt: str, user_content: str, fallback_text: str) -> str:
+        if user_content not in self._queues:
+            spec = self._pending.pop(0) if self._pending else ""
+            if isinstance(spec, list):
+                self._queues[user_content] = list(spec)
+            else:
+                self._queues[user_content] = [spec]
+            self._assignment_order.append(user_content)
+        queue = self._queues[user_content]
+        if len(queue) > 1:
+            return queue.pop(0)
+        return queue[0] if queue else ""
 
 
 if __name__ == "__main__":

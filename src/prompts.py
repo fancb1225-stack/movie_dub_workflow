@@ -214,8 +214,8 @@ REFLECT_DURATION_ISSUES_PROMPT = """
 
 【修正目标】
 只修改问题条目的英文文本，使重新生成 TTS 后能够放入原时间轴。
-too_long 的修正效果: 删除1-3个词，可以通过近义替换或调整语序；
-too_short 的修正效果: 添加1-3个词, 可以通过近义替换或调整语序。
+too_long 的修正效果: 删除1-3个词，或压缩1-2个从句，或调整语序；
+too_short 的修正效果: 添加1-3个词，或展开1-2个从句。
 
 【反思原则】
 1. **先理解原因**：分析当前翻译为何偏长或偏短——是冗余表达、过度解释、可压缩的从句，还是遗漏信息、表达过于精简。
@@ -223,6 +223,10 @@ too_short 的修正效果: 添加1-3个词, 可以通过近义替换或调整语
    - 偏长时：优先删减弱信息、语气词、自然口语连接词，压缩冗余从句；保留核心观点与剧情信息。
    - 偏短时：在不编造剧情的前提下，适度补充自然口语连接词或展开表达。
 3. **最小改动**：每次修正只调整音节到目标范围内，不要过度修正；能改一个词解决的问题，不重写整句。
+4. **完整句优先**：压缩后仍必须保留主语、谓语和必要宾语；每个 index 的文本单独朗读时都要尽量自然完整，不要以裸名词短语、悬空所有格、未完成从句结尾。
+5. **相邻条目连贯**：相邻 issue 原本组成连续句时，可以重新分配语义，但不能让上一条结尾和下一条开头重复同一短语；合读时必须自然。
+6. **保留已可用条目**：如果某条改写已经完整、自然、足够短，下一轮应返回原文本保持不变；只重写仍有残句、重复、语义断裂或明显超长的条目。
+7. **文化和身份语义优先**：涉及婚嫁、家庭身份、阶层关系、地域身份、职业角色、亲属关系、出生身份、漂泊/归属等信息时，不能压缩成过泛的表达；必须保留原句的社会关系和文化含义。例如 born Chinese in Southeast Asia / rootless / married off / matrilocal 这类表达不能泛化。
 
 【处理规则】
 1. 如果问题是 too_long，且会影响后续片段的对齐, 则必须压缩。
@@ -232,7 +236,7 @@ too_short 的修正效果: 添加1-3个词, 可以通过近义替换或调整语
 5. 必须保证上下文语义完整性。
 6. 开头吸引注意力的片段（如对话开头、剧情转折）不宜过度压缩，保持原有表达。
 
-【单句压缩技巧】
+【压缩技巧】
 1. 可删除 well, just, really, actually, suddenly 等弱语气词。
 2. 可删除重复信息。
 3. 删除不影响理解的形容词、副词。
@@ -240,11 +244,15 @@ too_short 的修正效果: 添加1-3个词, 可以通过近义替换或调整语
 5. 把被动句改成主动句。
 6. 把具体解释压缩成动作结果。
 7. 保留人物、动作、因果、转折、关键信息。
+8. 优先做语义压缩：用更短的话完整表达核心意思，而不是机械保留前半句。
+9. 多个并列观点过长时，可以概括为 one reading / many layers / different meanings，但不能删掉句子的谓语、宾语或结论。
 
 【压缩目标】
 改写后的文本应满足：
 - 预计词数 <= 字幕时长 * 2.5 words/s；
 - 最多不超过 字幕时长 * 2.8 words/s；
+- 通常压缩到原句词数的 60%-80%，不要低于 50%，除非原句本身有明显重复信息；
+- 每个 issue index 都必须返回一条 JSON 替换结果；如果确实无需修改，也返回原文本，不能遗漏 issue；
 - 不要接近 190 WPM 极限。
 
 【禁止】
@@ -255,6 +263,17 @@ too_short 的修正效果: 添加1-3个词, 可以通过近义替换或调整语
 5. 不要添加新剧情。
 6. 不要改变人物关系和剧情事实。
 7. 不要返回未列入问题列表的字幕。
+8. 不要输出英文残句；每条改写都必须是完整、自然、可朗读的英文句子或独立字幕短语。
+9. 不要只保留原句开头来凑短；必须保留原句核心命题。
+10. 不要以冠词、介词、连词、be 动词或悬空代词结尾，例如 an、the、on、of、and、but、is、are、Some。
+11. 不要使用 em dash、特殊引号或可能编码损坏的字符；只使用普通 ASCII 标点（逗号、句号、分号、冒号、问号、感叹号、普通引号、连字符）。
+12. 不要让相邻字幕重复同一开头或结尾短语；合并或重分配语义时，也要避免连续条目出现机械重复。
+13. 不要输出只有名词短语、介词短语或半个从句的残句；必须补成可理解的动作、判断或承接。
+14. 不要使用普通观众不一定理解的缩写、首字母缩写或行业简称，除非原文已经这样写；例如不要把 Southeast Asia 写成 SEA。
+15. 不要为了变短省略必要冠词、介词或宾语，导致不自然英文，例如 at inn、to marry rich 这类表达应改成自然可朗读的短句。
+16. 不要把具体身份、文化处境或被动关系压成过泛表达；例如”被嫁出去的女儿”不能只压成”不想结婚”。
+17. 不要为了缩短牺牲基本英语语法：禁止缺少必要冠词（be landlord → be a landlord）、缺少主语（But didn't know where）、不自然的介词残缺（no place back → nowhere to return）。
+18. 旁白和叙述段落不要使用过度口语缩写（Cause、gonna、wanna）或省略主语，除非原文就是角色对白。
 
 【翻译技巧（保持与首次翻译风格一致）】
 ## 对话翻译
@@ -284,42 +303,90 @@ too_short 的修正效果: 添加1-3个词, 可以通过近义替换或调整语
 - "缘分天注定" → It's meant to be
 - "冤家路窄" → Of all the people to run into...
 
-# 输出要求
-1. 纯标准 SRT 格式，保留原序号和时间轴
-2. . 使用缩写（I'm, you're, he's）
-4. 避免过度使用 "very"
+【重点要求】
+优先修复仍有明显残句、跨段重复、语义断裂或朗读不自然的条目：
+- 相邻问题条目如果原本组成连续句，必须合读通顺；不要让上一条结尾和下一条开头重复同一短语。
+- 压缩时保留核心主语、谓语、宾语和关键语义，不要留下只有名词短语或半个从句的残句。
+- 已经完整、自然、足够短的条目应保持不变；只重写仍有明确问题的条目。
+- 优先保留具体身份、文化处境和人物关系；压缩时可以删修饰语，但不能把具体处境改成泛泛的短句。
+- 每条输出都必须像自然英文字幕，而不是关键词摘要；必要冠词、介词和宾语不能为省字数随意删除。
+
+【输出要求】
+1. 只输出 JSON 数组，不要输出 SRT、Markdown、解释或代码块。
+2. 数组元素格式固定为 {"index": 数字, "text": "改写后的英文字幕"}。
+3. 每个问题条目都必须返回一条 JSON 结果；不要遗漏任何 issue index。
+4. 不要返回未列入问题列表的字幕。
+5. text 里只放字幕文本，不要包含序号或时间轴。
+6. text 只能使用普通 ASCII 标点，禁止 em dash、特殊引号和乱码字符。
+7. 使用缩写（I'm, you're, he's），避免过度使用 "very"。
 
 # 翻译示例
-## 示例 1（对话）
-输入：
-1
-00:00:00,000 --> 00:00:05,740
-你想甩了我？不行！我们不是说好的吗？
+## 反面示例（不要这样压缩）
+❌ 残句/缺谓语：
+- Before: but carrying others' fates.
+- Bad: but others' fates.
+- Better: but carried others' fates.
 
-输出：
-1
-00:00:00,000 --> 00:00:05,740
-You want to leave me? No way! We had a deal!
+❌ 缺冠词/介词导致不自然：
+- Before: in reality, everything at the inn
+- Bad: everything at inn
+- Better: she ran everything at the inn
 
-## 示例 2（旁白）
-输入：
-2
-00:00:06,000 --> 00:00:10,500
-她终于明白了，原来这一切都是他精心策划的。
+❌ 不常见缩写：
+- Before: born in Southeast Asia
+- Bad: from SEA
+- Better: born in Southeast Asia
 
-输出：
-2
-00:00:06,000 --> 00:00:10,500
-She finally gets it. He planned this all along.
+❌ 文化和身份语义被压得过泛：
+- Before: a daughter married off
+- Bad: didn't want marriage
+- Better: wouldn't be married off
+
+❌ 语义变窄或删掉关键特质：
+- Before: sleazy and weak men
+- Bad: weak men
+- Better: flawed men
+
+❌ 语法错误的关键词摘要：
+- Before: Some leave because home is hard.
+- Bad: Some leave home's hard.
+- Better: Some leave because home is hard.
+
+❌ 缺冠词/主语/宾语的语法残句：
+- Before: You can always be the landlord.
+- Bad: You can always be landlord.
+- Better: You can always stay a landlord.
+
+- Before: But she didn't know where to go back.
+- Bad: But didn't know where.
+- Better: But she had nowhere to return.
+
+- Before: Some leave with no place to go back.
+- Bad: Some leave with no place back.
+- Better: Some leave with nowhere to return.
+
+❌ 旁白中误用过度口语缩写：
+- Before: Because "zǒu" means to leave.
+- Bad: Cause 'zǒu' means to go.
+- Better: Because "zǒu" means to leave.
+
+❌ 文化和身份语义被过度简化：
+- Before: She was born a Chinese in Southeast Asia, with no roots.
+- Bad: She was Chinese in Southeast Asia. She has no roots.
+- Better: She was born Chinese in Southeast Asia. She has no roots.
 
 【输出】
-只输出被修改条目的标准 SRT。
+只输出 JSON 数组，例如：
+[
+  {"index": 3, "text": "完整、自然、压缩后的英文字幕。"}
+]
 
-## 示例
+不要输出 SRT。不要输出 Before/After。不要输出解释。
+
+## 压缩示例
 Before:
 The moment he steps into the room, he immediately realizes that something is terribly wrong.
 
 After:
-The moment he steps into the room, he immediately knows something is wrong.
+The moment he enters, he knows something's wrong.
 """.strip()
-
