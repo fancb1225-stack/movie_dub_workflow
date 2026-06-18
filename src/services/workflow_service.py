@@ -87,6 +87,7 @@ class WorkflowService:
         try:
             job_config = _job_workflow_config(self.config, job, _resolve_background_audio(job))
             _apply_forced_job_asr_provider(job_config)
+            _ensure_job_mock_asr_allowed(job_config)
             job_config["paths"]["input_mp3"] = str(vocals_path)
             output_srt = Path(job_config["paths"]["asr_srt"])
             ensure_dir(output_srt.parent)
@@ -482,6 +483,16 @@ def _apply_forced_job_asr_provider(config: dict[str, Any]) -> None:
     provider = str(config.get("workflow", {}).get("force_job_asr_provider", "") or "").strip()
     if provider:
         config.setdefault("asr", {})["provider"] = provider
+
+
+def _ensure_job_mock_asr_allowed(config: dict[str, Any]) -> None:
+    provider = str(config.get("asr", {}).get("provider", "mock")).lower()
+    allow_mock = bool(config.get("workflow", {}).get("allow_mock_asr_for_jobs", False))
+    if provider == "mock" and not allow_mock:
+        raise RuntimeError(
+            "Job preprocessing would use mock ASR, but "
+            "workflow.allow_mock_asr_for_jobs is false."
+        )
 
 
 def _success_report(

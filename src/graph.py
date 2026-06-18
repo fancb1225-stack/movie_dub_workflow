@@ -27,7 +27,7 @@ class RunnableWorkflow(Protocol):
 
 def build_workflow(config: dict[str, Any], resume_from: str | None = None) -> RunnableWorkflow:
     try:
-        return _build_langgraph_workflow(config)
+        return _build_langgraph_workflow(config, resume_from=resume_from)
     except ImportError:
         return SequentialWorkflow(config, resume_from=resume_from)
 
@@ -106,7 +106,9 @@ class SequentialWorkflow:
         return
 
 
-def _build_langgraph_workflow(config: dict[str, Any]) -> RunnableWorkflow:
+def _build_langgraph_workflow(
+    config: dict[str, Any], resume_from: str | None = None
+) -> RunnableWorkflow:
     from langgraph.graph import END, StateGraph
 
     graph = StateGraph(WorkflowState)
@@ -120,7 +122,8 @@ def _build_langgraph_workflow(config: dict[str, Any]) -> RunnableWorkflow:
     graph.add_node("reflect_duration_issues", reflect_duration_issues)
     graph.add_node("align_and_merge_audio", align_and_merge_audio)
 
-    graph.set_entry_point("merge_zh_asr_srt")
+    entry_point = resume_from if resume_from in NODE_ORDER else "merge_zh_asr_srt"
+    graph.set_entry_point(entry_point)
     graph.add_edge("merge_zh_asr_srt", "restitch_merge_cuts")
     graph.add_edge("restitch_merge_cuts", "clean_srt")
     graph.add_edge("clean_srt", "critic_srt")
@@ -138,4 +141,3 @@ def _build_langgraph_workflow(config: dict[str, Any]) -> RunnableWorkflow:
     graph.add_edge("reflect_duration_issues", "tts_generate_and_detect")
     graph.add_edge("align_and_merge_audio", END)
     return graph.compile()
-
