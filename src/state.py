@@ -62,6 +62,7 @@ class WorkflowState(TypedDict, total=False):
     raw_cues: list[SrtCue]
     merged_asr_srt: str
     merged_asr_cues: list[SrtCue]
+    merge_hard_cuts: list[dict[str, Any]]
     cleaned_srt: str
     cleaned_cues: list[SrtCue]
     corrected_srt: str

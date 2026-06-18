@@ -10,6 +10,7 @@ SNAPSHOT_FILENAME = "state_snapshot.json"
 
 NODE_ORDER = [
     "merge_zh_asr_srt",
+    "restitch_merge_cuts",
     "clean_srt",
     "critic_srt",
     "summarize_plot",

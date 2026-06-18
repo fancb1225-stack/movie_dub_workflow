@@ -7,6 +7,7 @@ from src.nodes.audio_node import align_and_merge_audio
 from src.nodes.clean_srt_node import clean_srt
 from src.nodes.merge_zh_asr_node import merge_zh_asr_srt
 from src.nodes.merge_and_critic_node import critic_srt
+from src.nodes.restitch_merge_cuts_node import restitch_merge_cuts
 from src.nodes.reflection_node import reflect_duration_issues
 from src.nodes.summarize_node import summarize_plot
 from src.nodes.translate_node import translate_to_english
@@ -48,6 +49,7 @@ def should_reflect_or_finish(state: WorkflowState) -> str:
 
 NODE_ORDER = [
     "merge_zh_asr_srt",
+    "restitch_merge_cuts",
     "clean_srt",
     "critic_srt",
     "summarize_plot",
@@ -78,6 +80,7 @@ class SequentialWorkflow:
 
         nodes = [
             ("merge_zh_asr_srt", merge_zh_asr_srt),
+            ("restitch_merge_cuts", restitch_merge_cuts),
             ("clean_srt", clean_srt),
             ("critic_srt", critic_srt),
             ("summarize_plot", summarize_plot),
@@ -108,6 +111,7 @@ def _build_langgraph_workflow(config: dict[str, Any]) -> RunnableWorkflow:
 
     graph = StateGraph(WorkflowState)
     graph.add_node("merge_zh_asr_srt", merge_zh_asr_srt)
+    graph.add_node("restitch_merge_cuts", restitch_merge_cuts)
     graph.add_node("clean_srt", clean_srt)
     graph.add_node("critic_srt", critic_srt)
     graph.add_node("summarize_plot", summarize_plot)
@@ -117,7 +121,8 @@ def _build_langgraph_workflow(config: dict[str, Any]) -> RunnableWorkflow:
     graph.add_node("align_and_merge_audio", align_and_merge_audio)
 
     graph.set_entry_point("merge_zh_asr_srt")
-    graph.add_edge("merge_zh_asr_srt", "clean_srt")
+    graph.add_edge("merge_zh_asr_srt", "restitch_merge_cuts")
+    graph.add_edge("restitch_merge_cuts", "clean_srt")
     graph.add_edge("clean_srt", "critic_srt")
     graph.add_edge("critic_srt", "summarize_plot")
     graph.add_edge("summarize_plot", "translate_to_english")

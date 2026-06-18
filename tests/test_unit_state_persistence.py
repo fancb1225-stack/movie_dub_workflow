@@ -55,13 +55,15 @@ class StatePersistenceTests(unittest.TestCase):
             self.assertFalse(snapshot_path.exists())
 
     def test_resume_node_mapping(self) -> None:
-        self.assertEqual(get_resume_node("merge_zh_asr_srt"), "clean_srt")
+        self.assertEqual(get_resume_node("merge_zh_asr_srt"), "restitch_merge_cuts")
+        self.assertEqual(get_resume_node("restitch_merge_cuts"), "clean_srt")
         self.assertEqual(get_resume_node("translate_to_english"), "tts_generate_and_detect")
         self.assertEqual(get_resume_node("align_and_merge_audio"), None)
 
     def test_resume_start_index(self) -> None:
         self.assertEqual(get_resume_start_index("merge_zh_asr_srt"), 1)
-        self.assertEqual(get_resume_start_index("clean_srt"), 2)
+        self.assertEqual(get_resume_start_index("restitch_merge_cuts"), 2)
+        self.assertEqual(get_resume_start_index("clean_srt"), 3)
         self.assertEqual(get_resume_start_index("align_and_merge_audio"), len(NODE_ORDER))
 
     def test_resume_start_index_unknown_node(self) -> None:

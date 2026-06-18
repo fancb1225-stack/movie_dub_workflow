@@ -32,6 +32,7 @@ PREPROCESS_STEPS = [
 
 WORKFLOW_STEPS = [
     {"node": "merge_zh_asr_srt", "label": "ASR 字幕智能合并"},
+    {"node": "restitch_merge_cuts", "label": "合并切点重整"},
     {"node": "clean_srt", "label": "字幕清洗"},
     {"node": "critic_srt", "label": "字幕校对"},
     {"node": "summarize_plot", "label": "剧情摘要"},

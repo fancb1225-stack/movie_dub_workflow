@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.config import config_path
 from src.llm_client import LLMClient
 from src.prompts import MERGE_ZH_ASR_SRT_PROMPT
 from src.state import SrtCue, WorkflowState
 from src.tools.file_tools import write_json, write_text
-from src.tools.srt_tools import clean_cues, format_srt, ms_to_srt_time, parse_srt
+from src.tools.merge_tools import split_cues_by_gap
+from src.tools.srt_tools import clean_cues, format_srt, ms_to_srt_time, parse_srt, reindex_cues
 
 logger = logging.getLogger(__name__)
 
@@ -16,27 +18,35 @@ def merge_zh_asr_srt(state: WorkflowState) -> WorkflowState:
     logger.info("merge_zh_asr_srt: entering node")
     config = state["config"]
     raw_cues = state.get("raw_cues") or clean_cues(parse_srt(state.get("raw_srt", "")))
-    fallback_srt = format_srt(raw_cues)
-    used_fallback = False
-    error = None
+    srt_config = config.get("srt", {})
+    max_gap_ms = int(srt_config.get("merge_max_gap_ms", 450))
+    max_retries = int(config.get("translation", {}).get("chunk_max_retries", 3))
+    max_parallel = max(1, int(config.get("translation", {}).get("max_parallel_chunks", 3)))
+
     client = LLMClient.from_config(config)
-    if client.enabled():
-        try:
-            response = client.complete(MERGE_ZH_ASR_SRT_PROMPT, fallback_srt, fallback_srt)
-            normalized_cues = _snap_timestamps_to_source_boundaries(
-                clean_cues(parse_srt(response)),
-                raw_cues,
-            )
-            merged_cues, error = _parse_or_fallback(normalized_cues, raw_cues)
-            used_fallback = merged_cues is raw_cues
-        except Exception as exc:
-            merged_cues = raw_cues
-            used_fallback = True
-            error = f"LLM merge request failed; fallback to original ASR cues: {exc}"
-    else:
+    chunks, hard_cuts = split_cues_by_gap(raw_cues, max_gap_ms=max_gap_ms)
+
+    used_fallback = False
+    error: str | None = None
+    failed_chunks: list[int] = []
+
+    if not client.enabled():
         merged_cues = raw_cues
         used_fallback = True
         error = "LLM merge is disabled; original ASR SRT was used."
+    elif len(chunks) <= 1:
+        # 单块:走原逻辑(单次 LLM 调用 + snap + 逐条容错)
+        merged_cues, used_fallback, error = _merge_single(client, raw_cues, max_retries)
+        if used_fallback:
+            failed_chunks = [1]
+    else:
+        # 多块:并发合并 + 块级重试容错
+        merged_cues, failed_chunks, error = _merge_chunks_concurrent(
+            client, chunks, max_retries, max_parallel
+        )
+        used_fallback = len(failed_chunks) == len(chunks)
+
+    merged_cues = reindex_cues(merged_cues)
     merged_srt = format_srt(merged_cues)
     write_text(config_path(config, "paths.merged_asr_srt"), merged_srt)
     report_path = config_path(config, "paths.reports_dir") / "merge_zh_asr_report.json"
@@ -46,6 +56,9 @@ def merge_zh_asr_srt(state: WorkflowState) -> WorkflowState:
             "input_cue_count": len(raw_cues),
             "output_cue_count": len(merged_cues),
             "used_fallback": used_fallback,
+            "chunk_count": len(chunks),
+            "hard_cut_count": len(hard_cuts),
+            "failed_chunks": failed_chunks,
             "error": error,
         },
     )
@@ -53,8 +66,91 @@ def merge_zh_asr_srt(state: WorkflowState) -> WorkflowState:
     state["raw_srt"] = merged_srt
     state["merged_asr_cues"] = merged_cues
     state["merged_asr_srt"] = merged_srt
+    state["merge_hard_cuts"] = hard_cuts
     state.setdefault("reports", {})["merge_zh_asr_report"] = str(report_path)
     return state
+
+
+def _merge_single(
+    client: LLMClient, raw_cues: list[SrtCue], max_retries: int
+) -> tuple[list[SrtCue], bool, str | None]:
+    """单块合并:重试 max_retries 次,成功返回合并结果,全失败回退源 cue。"""
+    fallback_srt = format_srt(raw_cues)
+    last_error: str | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            response = client.complete(MERGE_ZH_ASR_SRT_PROMPT, fallback_srt, fallback_srt)
+            normalized_cues = _snap_timestamps_to_source_boundaries(
+                clean_cues(parse_srt(response)), raw_cues
+            )
+            merged_cues, err = _parse_or_fallback(normalized_cues, raw_cues)
+            if merged_cues is not raw_cues:
+                return merged_cues, False, None
+            last_error = err or "LLM merge returned invalid result"
+        except Exception as exc:
+            last_error = f"LLM merge request failed: {exc}"
+            logger.warning("merge single attempt %d/%d failed: %s", attempt + 1, max_retries + 1, exc)
+    return raw_cues, True, last_error
+
+
+def _merge_chunks_concurrent(
+    client: LLMClient,
+    chunks: list[list[SrtCue]],
+    max_retries: int,
+    max_parallel: int,
+) -> tuple[list[SrtCue], list[int], str | None]:
+    """多块并发合并,块级重试,失败块用源 cue 占位。"""
+    worker_count = min(max_parallel, max(1, len(chunks)))
+    results: dict[int, list[SrtCue]] = {}
+    failed: list[int] = []
+    last_error: str | None = None
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = {
+            executor.submit(_merge_chunk, client, chunk, idx, max_retries): idx
+            for idx, chunk in enumerate(chunks)
+        }
+        for future in as_completed(futures):
+            idx, merged, chunk_failed, err = future.result()
+            results[idx] = merged
+            if chunk_failed:
+                failed.append(idx + 1)
+                if err:
+                    last_error = err
+    merged_cues: list[SrtCue] = []
+    for idx in range(len(chunks)):
+        merged_cues.extend(results.get(idx, chunks[idx]))
+    return merged_cues, sorted(failed), last_error
+
+
+def _merge_chunk(
+    client: LLMClient,
+    chunk_cues: list[SrtCue],
+    chunk_index: int,
+    max_retries: int,
+) -> tuple[int, list[SrtCue], bool, str | None]:
+    """合并单个分块,失败重试;耗尽用源 cue 占位。
+    返回 (chunk_index, merged_cues, failed, error)。"""
+    chunk_srt = format_srt(chunk_cues)
+    last_error: str | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            response = client.complete(MERGE_ZH_ASR_SRT_PROMPT, chunk_srt, chunk_srt)
+            normalized = _snap_timestamps_to_source_boundaries(
+                clean_cues(parse_srt(response)), chunk_cues
+            )
+            merged, err = _parse_or_fallback(normalized, chunk_cues)
+            if merged is not chunk_cues:
+                return chunk_index, merged, False, None
+            last_error = err or "invalid result"
+        except Exception as exc:
+            last_error = f"LLM merge chunk {chunk_index + 1} failed: {exc}"
+            logger.warning(
+                "merge chunk %d attempt %d/%d failed: %s",
+                chunk_index + 1, attempt + 1, max_retries + 1, exc,
+            )
+    logger.error("merge chunk %d exhausted retries; fallback to source cues", chunk_index + 1)
+    return chunk_index, chunk_cues, True, last_error
+
 
 
 def _parse_or_fallback(
