@@ -87,7 +87,7 @@ class SimpleAlignTests(unittest.TestCase):
             self.assertFalse(report["placements"][0]["shifted"])
 
     def test_long_segment_shifts_forward_without_overlap(self) -> None:
-        """长片段与上一个重叠 → 前移到不重叠,受 1s 上限。"""
+        """长片段与上一个重叠 → 顺延到上一个结束点,保证不重叠。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             seg1 = root / "seg1.wav"
@@ -98,10 +98,9 @@ class SimpleAlignTests(unittest.TestCase):
             _write_wav(seg2, [2000] * 800, sample_rate=8000)
 
             # seg1 cue 0-100, dur 100 → ends at 100
-            # seg2 cue 80-200, dur 100 → natural_end 180, overlaps seg1(ends 100)
-            # 前移: min(80-1000, 100) = min(-920,100) = -920 → max(0,...) = 0
-            # 但 0 仍与 seg1 重叠。规则是 min(cue_start-1000, prev_end),取 prev_end=100? 不,min(-920,100)=-920→0
-            # 这里验证取 max(0, ...) 即从 0 开始
+            # seg2 cue 80-200, dur 100 → cue_start(80) < prev_end(100), 重叠
+            # 新公式: max(0, max(cue_start-1000, prev_end)) = max(0, max(-920,100)) = 100
+            # seg2 顺延到 100,紧贴 seg1 结束,不重叠
             report = align_and_merge_segments_simple(
                 cues=[_cue(1, 0, 100), _cue(2, 80, 200)],
                 segments=[
@@ -112,12 +111,16 @@ class SimpleAlignTests(unittest.TestCase):
                 output_mp3=root / "narration.mp3",
                 config=_config(root),
             )
-            # seg2 前移到 0(cue_start-1000 被 0 钳住),仍与 seg1 叠加但这是前移上限内的结果
-            self.assertEqual(report["placements"][1]["start_ms"], 0)
+            self.assertEqual(report["placements"][1]["start_ms"], 100)
             self.assertTrue(report["placements"][1]["shifted"])
+            # 验证不重叠:seg2 start == seg1 end
+            self.assertEqual(
+                report["placements"][1]["start_ms"],
+                report["placements"][0]["start_ms"] + report["placements"][0]["duration_ms"],
+            )
 
-    def test_shift_capped_by_one_second(self) -> None:
-        """前移不超过 1s:cue_start=5000, prev_end=4500 → min(4000,4500)=4000。"""
+    def test_non_overlapping_segment_not_shifted(self) -> None:
+        """不重叠的片段保持原位(cue_start >= prev_end)。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             seg1 = root / "seg1.wav"
@@ -125,25 +128,23 @@ class SimpleAlignTests(unittest.TestCase):
             _write_wav(seg1, [1000] * 800, sample_rate=8000)
             _write_wav(seg2, [2000] * 800, sample_rate=8000)
 
-            # seg1 cue 3500-4500, dur 1000 → ends 4500
-            # seg2 cue 5000-5100, dur 100 → cue_start(5000) >= prev_end(4500), 无重叠 → 不前移
-            # 改为重叠场景: seg2 cue 4400-4500 重叠 seg1(ends 4500)
-            # 前移: min(4400-1000, 4500) = min(3400,4500) = 3400, 不重叠(3400+100=3500 <= 4500) ✓ 前移1000ms
+            # seg1 cue 0-100, dur 100 → ends 100
+            # seg2 cue 200-300, dur 100 → cue_start(200) >= prev_end(100), 不重叠,不前移
             report = align_and_merge_segments_simple(
-                cues=[_cue(1, 3500, 4500), _cue(2, 4400, 4500)],
+                cues=[_cue(1, 0, 100), _cue(2, 200, 300)],
                 segments=[
-                    _segment(1, 3500, 4500, str(seg1), duration_ms=1000),
-                    _segment(2, 4400, 4500, str(seg2), duration_ms=100),
+                    _segment(1, 0, 100, str(seg1), duration_ms=100),
+                    _segment(2, 200, 300, str(seg2), duration_ms=100),
                 ],
                 output_wav=root / "narration.wav",
                 output_mp3=root / "narration.mp3",
                 config=_config(root),
             )
-            self.assertEqual(report["placements"][1]["start_ms"], 3400)
-            self.assertTrue(report["placements"][1]["shifted"])
+            self.assertEqual(report["placements"][1]["start_ms"], 200)
+            self.assertFalse(report["placements"][1]["shifted"])
 
     def test_shift_uses_prev_end_when_one_second_insufficient(self) -> None:
-        """严重重叠:往前1s仍不够 → 取 prev_end(不重叠下限)。"""
+        """严重重叠:往前1s仍不够 → 顺延到 prev_end(不重叠下限)。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             seg1 = root / "seg1.wav"
@@ -152,10 +153,9 @@ class SimpleAlignTests(unittest.TestCase):
             _write_wav(seg2, [2000] * 800, sample_rate=8000)
 
             # seg1 cue 0-4000, dur 4000 → ends 4000
-            # seg2 cue 3000-3100, dur 100 → 重叠 seg1(ends 4000)
-            # min(3000-1000, 4000) = min(2000,4000) = 2000 → start=2000, 仍重叠(2000+100=2100 <4000)
-            # 即 1s 上限内无法不重叠,取 prev_end=4000? 不,min(2000,4000)=2000
-            # 用户规则:min(cue_start-1000, 上片段end) → min(2000,4000)=2000
+            # seg2 cue 3000-3100, dur 100 → cue_start(3000) < prev_end(4000), 重叠
+            # 新公式: max(0, max(3000-1000, 4000)) = max(0, max(2000,4000)) = 4000
+            # seg2 顺延到 4000,紧贴 seg1 结束
             report = align_and_merge_segments_simple(
                 cues=[_cue(1, 0, 4000), _cue(2, 3000, 3100)],
                 segments=[
@@ -166,8 +166,8 @@ class SimpleAlignTests(unittest.TestCase):
                 output_mp3=root / "narration.mp3",
                 config=_config(root),
             )
-            # 严格按 min(cue_start-1000, prev_end)
-            self.assertEqual(report["placements"][1]["start_ms"], 2000)
+            self.assertEqual(report["placements"][1]["start_ms"], 4000)
+            self.assertTrue(report["placements"][1]["shifted"])
 
     def test_first_segment_not_shifted(self) -> None:
         """首片段无前序 → 不前移,start==cue_start。"""
@@ -218,9 +218,10 @@ class SimpleAlignTests(unittest.TestCase):
             _write_wav(seg1, [1000] * 8000, sample_rate=8000)  # 1000ms
             _write_wav(seg2, [2000] * 8000, sample_rate=8000)  # 1000ms
 
-            # seg1 cue 0-500, dur 1000 → 溢出到 1000
-            # seg2 cue 300-800, dur 1000 → 重叠,前移 min(300-1000,1000)=min(-700,1000)=-700→0,溢出到1000
-            # max_cue_end=800, 实际音频延伸到 1000
+            # seg1 cue 0-500, dur 1000 → 溢出到 1000, prev_end=1000
+            # seg2 cue 300-800, dur 1000 → cue_start(300) < prev_end(1000), 重叠
+            # 新公式: max(0, max(300-1000, 1000)) = 1000, 顺延到 1000, 溢出到 2000
+            # max_cue_end=800, 实际音频延伸到 2000
             report = align_and_merge_segments_simple(
                 cues=[_cue(1, 0, 500), _cue(2, 300, 800)],
                 segments=[

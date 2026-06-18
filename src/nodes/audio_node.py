@@ -4,7 +4,11 @@ import logging
 
 from src.config import config_path
 from src.state import WorkflowState
-from src.tools.audio_tools import align_and_merge_segments, align_and_merge_segments_simple
+from src.tools.audio_tools import (
+    align_and_merge_segments,
+    align_and_merge_segments_simple,
+    align_and_merge_segments_window,
+)
 from src.tools.file_tools import write_json, write_text
 
 logger = logging.getLogger(__name__)
@@ -24,6 +28,25 @@ def align_and_merge_audio(state: WorkflowState) -> WorkflowState:
             config_path(config, "paths.narration_mp3"),
             config,
         )
+    elif alignment_mode == "window":
+        audio_report = align_and_merge_segments_window(
+            state.get("final_cues", []),
+            state.get("tts_segments", []),
+            config_path(config, "paths.narration_wav"),
+            config_path(config, "paths.narration_mp3"),
+            config,
+        )
+        # 顺延明细单独写文件,便于排查超长段
+        delay_details_path = config_path(config, "paths.reports_dir") / "alignment_delay_details.json"
+        write_json(
+            delay_details_path,
+            {
+                "alignment_mode": "window",
+                "delay_summary": audio_report.get("delay_summary", {}),
+                "delay_details": audio_report.get("delay_details", []),
+            },
+        )
+        state.setdefault("reports", {})["alignment_delay_details"] = str(delay_details_path)
     else:
         audio_report = align_and_merge_segments_simple(
             state.get("final_cues", []),

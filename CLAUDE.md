@@ -109,3 +109,8 @@ src/prompts.py
 ```
 
 不要新增媒体处理 Prompt。媒体任务必须通过确定性的 tool/service 实现。
+
+## git 规范
+
+每次修改完代码自动提交到远程仓库.
+在commit和push等操作前由我确认.

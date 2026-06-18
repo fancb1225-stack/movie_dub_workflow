@@ -77,10 +77,10 @@ def align_and_merge_segments_simple(
 
     规则:
     - 片段比 SRT 时间轴短 → 对齐到 cue 起点,尾部天然静音(画布预填 0)。
-    - 片段与上一个片段重叠 → 向前移动到不重叠位置,移动不超过
-      ``max_shift_forward_ms``(默认 1s);公式为
-      ``start_ms = max(0, min(cue_start - max_shift, prev_end))``。
-    - 前移后仍溢出 → 不截断,画布自动延长。
+    - 片段与上一个片段重叠 → 顺延到上一个片段结束点,保证不重叠;
+      公式为 ``start_ms = max(0, max(cue_start - max_shift, prev_end))``。
+      重叠时片段紧贴上一个结束,不重叠时保持 cue 起点不动。
+    - 顺延后仍溢出 → 不截断,画布自动延长。
     """
     wav_path = ensure_parent(output_wav)
     mp3_path = ensure_parent(output_mp3)
@@ -111,8 +111,11 @@ def align_and_merge_segments_simple(
             continue
 
         if cue_start < prev_end_ms:
-            # 与上一个片段重叠 → 向前移动:min(cue_start - max_shift, prev_end)
-            start_ms = max(0, min(cue_start - max_shift, prev_end_ms))
+            # 与上一个片段重叠 → 顺延到上一个片段结束点,保证不重叠。
+            # 公式: start_ms = max(0, max(cue_start - max_shift, prev_end))
+            # 一旦重叠(cue_start < prev_end),必有 cue_start - max_shift < prev_end,
+            # 故 max 取 prev_end,片段紧贴上一个结束;不重叠时保持 cue_start 不动。
+            start_ms = max(0, max(cue_start - max_shift, prev_end_ms))
         else:
             start_ms = cue_start
 
@@ -141,6 +144,113 @@ def align_and_merge_segments_simple(
         "mp3_created_with": mp3_created_with,
         "warnings": warnings,
         "placements": placements,
+    }
+
+
+def align_and_merge_segments_window(
+    cues: list[SrtCue],
+    segments: list[TtsSegment],
+    output_wav: str | Path,
+    output_mp3: str | Path,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """窗口基准对齐:以每个 SRT cue 的 [start,end] 时间窗口为对齐基准。
+
+    规则:
+    - 音频短于窗口 → 能贴 cue 起点就贴(口型对齐),被上一段前推时在剩余窗口居中。
+    - 音频长于窗口 → 从上一段实际结束点接续原样拼接(不强行塞回窗口、不重叠)。
+    - 按需顺延:超长段后,下一段若 cue_start 已晚于 prev_end 则回到自身 cue 窗口贴起点。
+    - 顺延明细:每个 overflow 段记录 cue/actual 时序、shift、overrun,汇总进 delay_summary。
+    """
+    wav_path = ensure_parent(output_wav)
+    mp3_path = ensure_parent(output_mp3)
+    sample_rate = int(config.get("tts", {}).get("sample_rate", 24000))
+
+    max_cue_end = max((cue["end_ms"] for cue in cues), default=0)
+    canvas_ms = max(max_cue_end, 1000) + 500
+    canvas = array("h", [0]) * int(sample_rate * canvas_ms / 1000)
+
+    warnings: list[str] = []
+    placements: list[dict[str, Any]] = []
+    delay_details: list[dict[str, Any]] = []
+    prev_end_ms = 0
+
+    for segment in segments:
+        if not segment.get("success"):
+            warnings.append(f"Skip failed TTS segment {segment.get('index')}")
+            continue
+        cue_start = int(segment.get("start_ms", 0))
+        cue_end = int(segment.get("end_ms", cue_start))
+        duration = int(segment.get("duration_ms", 0))
+        try:
+            audio, segment_rate = _read_pcm_mono_16(segment["path"], config, sample_rate)
+            if segment_rate != sample_rate:
+                audio = _resample_nearest(audio, segment_rate, sample_rate)
+        except Exception as exc:
+            warnings.append(f"Skip unreadable TTS segment {segment.get('index')}: {exc}")
+            continue
+
+        window_start = max(cue_start, prev_end_ms)
+        window_len = cue_end - window_start
+
+        if window_len > 0 and duration <= window_len:
+            if cue_start >= prev_end_ms:
+                # 能贴 cue 起点就贴
+                start_ms = cue_start
+            else:
+                # 被上一段前推,在剩余窗口居中
+                start_ms = window_start + (window_len - duration) // 2
+            strategy = "centered"
+        else:
+            # 长于窗口(或窗口已被前推到 ≤0):从 prev_end 接续原样拼接
+            start_ms = max(prev_end_ms, cue_start)
+            strategy = "overflow"
+            shift_ms = start_ms - cue_start
+            delay_details.append(
+                {
+                    "index": segment.get("index"),
+                    "cue_start_ms": cue_start,
+                    "cue_end_ms": cue_end,
+                    "actual_start_ms": start_ms,
+                    "duration_ms": duration,
+                    "shift_ms": shift_ms,
+                    "overrun_ms": duration - max(0, cue_end - cue_start),
+                }
+            )
+
+        _mix_into_canvas(canvas, audio, start_ms, sample_rate)
+        prev_end_ms = start_ms + duration
+        placements.append(
+            {
+                "index": segment.get("index"),
+                "start_ms": start_ms,
+                "cue_start_ms": cue_start,
+                "duration_ms": duration,
+                "strategy": strategy,
+                "shifted": start_ms != cue_start,
+            }
+        )
+
+    _write_wav(wav_path, canvas, sample_rate)
+    mp3_created_with = _export_mp3_or_copy(wav_path, mp3_path, config)
+    duration_ms = int(len(canvas) / sample_rate * 1000)
+    delay_summary = {
+        "overflow_count": len(delay_details),
+        "total_shift_ms": sum(d["shift_ms"] for d in delay_details),
+        "total_overrun_ms": sum(d["overrun_ms"] for d in delay_details),
+    }
+    return {
+        "alignment_mode": "window",
+        "narration_wav": str(wav_path),
+        "narration_mp3": str(mp3_path),
+        "sample_rate": sample_rate,
+        "duration_ms": duration_ms,
+        "segment_count": len(segments),
+        "mp3_created_with": mp3_created_with,
+        "warnings": warnings,
+        "placements": placements,
+        "delay_details": delay_details,
+        "delay_summary": delay_summary,
     }
 
 
