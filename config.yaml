@@ -82,7 +82,7 @@ srt:
 tts:
   provider: edge_tts
   voice: en-US-AriaNeural
-  rate: "+30%"
+  rate: "+40%"
   sample_rate: 24000
   words_per_minute: 155
   max_retries: 1
@@ -90,7 +90,7 @@ tts:
 duration:
   max_overrun_ms: 350
   max_ratio: 1.12
-  max_reflection_rounds: 0
+  max_reflection_rounds: 1
 
 audio:
   mix_background: false

@@ -52,20 +52,23 @@ class MergeZhAsrNodeTests(unittest.TestCase):
             self.assertEqual(result[0]["end_ms"], 2000)
             self.assertEqual(result[0]["text"], "这个男人 被逼相亲")
 
-    def test_llm_output_with_invalid_timeline_falls_back(self) -> None:
+    def test_llm_output_with_invalid_timeline_per_cue_fallback(self) -> None:
+        """单条 cue 时间戳无效 → 仅丢弃该条,其余 LLM 合并结果保留,不全量回退。"""
         with tempfile.TemporaryDirectory() as temp_dir:
             state = _state(temp_dir)
+            # cue1 合法(0->2000 覆盖源1+2),cue2 时间戳严重错位(6900000 超出源范围)
             invalid = [
-                make_cue(1, 0, 2600, "这个男人 被逼相亲"),
-                make_cue(2, 2000, 3000, "态度还挺无所谓"),
+                make_cue(1, 0, 2000, "这个男人 被逼相亲"),
+                make_cue(2, 6900000, 6950000, "态度还挺无所谓"),
             ]
             snapped = _snap_timestamps_to_source_boundaries(invalid, state["raw_cues"])
             result, error = _parse_or_fallback(snapped, state["raw_cues"])
 
-            self.assertEqual(len(result), 3)
-            self.assertEqual(result[1]["text"], "被逼相亲")
+            # cue1(合法)保留;cue2(无效)被丢弃,不全量回退到 3 条源 cue
+            self.assertEqual(len(result), 1)
+            self.assertEqual(result[0]["text"], "这个男人 被逼相亲")
             self.assertTrue(error)
-            self.assertTrue("does not align" in (error or "") or "overlaps" in (error or ""))
+            self.assertIn("Dropped", (error or ""))
 
     def test_disabled_llm_uses_fallback_without_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

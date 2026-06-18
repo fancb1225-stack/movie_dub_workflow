@@ -28,7 +28,7 @@ def merge_zh_asr_srt(state: WorkflowState) -> WorkflowState:
                 raw_cues,
             )
             merged_cues, error = _parse_or_fallback(normalized_cues, raw_cues)
-            used_fallback = error is not None
+            used_fallback = merged_cues is raw_cues
         except Exception as exc:
             merged_cues = raw_cues
             used_fallback = True
@@ -63,10 +63,26 @@ def _parse_or_fallback(
     cues = srt_text if isinstance(srt_text, list) else clean_cues(parse_srt(srt_text))
     if not cues:
         return fallback_cues, "LLM output is not valid SRT; fallback to original ASR cues."
-    error = _validate_merged_cues(cues, fallback_cues)
-    if error:
-        return fallback_cues, error
-    return cues, None
+    kept: list[SrtCue] = []
+    dropped: list[int] = []
+    prev_end: int | None = None
+    for cue in cues:
+        error = _validate_merged_cue(cue, fallback_cues, prev_end)
+        if error is None:
+            kept.append(cue)
+            prev_end = cue["end_ms"]
+        else:
+            # 单条容错:丢弃无效 cue,保留其余 LLM 合并结果,不全量回退
+            dropped.append(cue.get("index", -1))
+            logger.warning("merge cue %s invalid, dropped: %s", cue.get("index"), error)
+    if not kept:
+        return fallback_cues, "All merged cues invalid; fallback to original ASR cues."
+    if dropped:
+        # 重新编号
+        for i, cue in enumerate(kept, start=1):
+            cue["index"] = i
+        return kept, f"Dropped {len(dropped)} invalid merged cue(s); kept {len(kept)}."
+    return kept, None
 
 
 def _snap_timestamps_to_source_boundaries(
@@ -104,32 +120,27 @@ def _nearest_boundary(value: int, boundaries: list[int], tolerance_ms: int) -> i
     return value
 
 
-def _validate_merged_cues(
-    cues: list[SrtCue], source_cues: list[SrtCue]
+def _validate_merged_cue(
+    cue: SrtCue, source_cues: list[SrtCue], prev_end: int | None
 ) -> str | None:
+    """校验单条合并 cue。返回 None 表示合法,返回字符串表示无效原因。"""
     if not source_cues:
         return None
     source_start = source_cues[0]["start_ms"]
     source_end = source_cues[-1]["end_ms"]
     source_boundaries = {cue["start_ms"] for cue in source_cues} | {cue["end_ms"] for cue in source_cues}
-    prev_end = None
-    for cue in cues:
-        if cue["start_ms"] >= cue["end_ms"]:
-            return f"Merged cue {cue['index']} has non-positive duration."
-        if cue["start_ms"] < source_start or cue["end_ms"] > source_end:
-            return (
-                f"Merged cue {cue['index']} timestamp [{cue['start_ms']}->{cue['end_ms']}] "
-                f"is outside source range [{source_start}->{source_end}]."
-            )
-        if cue["start_ms"] not in source_boundaries or cue["end_ms"] not in source_boundaries:
-            return (
-                f"Merged cue {cue['index']} timestamp [{cue['start_ms']}->{cue['end_ms']}] "
-                f"does not align with any source cue boundary."
-            )
-        if prev_end is not None and cue["start_ms"] < prev_end:
-            return (
-                f"Merged cue {cue['index']} overlaps with previous cue "
-                f"(start {cue['start_ms']} < prev end {prev_end})."
-            )
-        prev_end = cue["end_ms"]
+    if cue["start_ms"] >= cue["end_ms"]:
+        return f"non-positive duration [{cue['start_ms']}->{cue['end_ms']}]."
+    if cue["start_ms"] < source_start or cue["end_ms"] > source_end:
+        return (
+            f"timestamp [{cue['start_ms']}->{cue['end_ms']}] "
+            f"outside source range [{source_start}->{source_end}]."
+        )
+    if cue["start_ms"] not in source_boundaries or cue["end_ms"] not in source_boundaries:
+        return (
+            f"timestamp [{cue['start_ms']}->{cue['end_ms']}] "
+            f"does not align with any source cue boundary."
+        )
+    if prev_end is not None and cue["start_ms"] < prev_end:
+        return f"start {cue['start_ms']} < prev end {prev_end} (overlap)."
     return None
