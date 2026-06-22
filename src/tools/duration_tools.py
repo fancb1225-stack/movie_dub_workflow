@@ -40,8 +40,13 @@ def detect_duration_issues(
     segments: list[TtsSegment],
     max_overrun_ms: int,
     max_ratio: float,
+    zh_cues: list[SrtCue] | None = None,
+    plot_summary: str | None = None,
 ) -> list[DurationIssue]:
     cue_by_index = {cue["index"]: cue for cue in cues}
+    zh_by_index: dict[int, str] = {}
+    if zh_cues:
+        zh_by_index = {cue["index"]: cue["text"] for cue in zh_cues}
     issues: list[DurationIssue] = []
     for segment in segments:
         if not segment.get("success"):
@@ -54,18 +59,31 @@ def detect_duration_issues(
         overrun = tts_duration - subtitle_duration
         ratio = tts_duration / subtitle_duration if subtitle_duration > 0 else 999.0
         if overrun > max_overrun_ms or ratio > max_ratio:
-            issues.append(
-                {
-                    "index": cue["index"],
-                    "start_ms": cue["start_ms"],
-                    "end_ms": cue["end_ms"],
-                    "subtitle_duration_ms": subtitle_duration,
-                    "tts_duration_ms": tts_duration,
-                    "overrun_ms": overrun,
-                    "ratio": round(ratio, 3),
-                    "text": cue["text"],
-                }
-            )
+            en_text = cue["text"]
+            word_count = len(en_text.split())
+            wpm = int(word_count / (subtitle_duration / 60_000)) if subtitle_duration > 0 else 0
+            issue_types: list[str] = []
+            if overrun > max_overrun_ms or ratio > max_ratio:
+                issue_types.append("too_long")
+            if wpm > 190:
+                issue_types.append("high_wpm")
+            issue: DurationIssue = {
+                "index": cue["index"],
+                "start_ms": cue["start_ms"],
+                "end_ms": cue["end_ms"],
+                "subtitle_duration_ms": subtitle_duration,
+                "tts_duration_ms": tts_duration,
+                "overrun_ms": overrun,
+                "ratio": round(ratio, 3),
+                "text": en_text,
+                "en_text": en_text,
+                "word_count": word_count,
+                "wpm": wpm,
+                "issue_types": issue_types,
+            }
+            if segment["index"] in zh_by_index:
+                issue["zh_text"] = zh_by_index[segment["index"]]
+            issues.append(issue)
     return issues
 
 

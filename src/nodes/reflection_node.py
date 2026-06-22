@@ -25,7 +25,7 @@ def reflect_duration_issues(state: WorkflowState) -> WorkflowState:
     )
     response = LLMClient.from_config(config).complete(
         prompt_for(config, "reflect_duration_issues"),
-        _build_reflection_input(issues),
+        _build_reflection_input(issues, state),
         json.dumps(
             [
                 {"index": index, "text": text}
@@ -51,8 +51,12 @@ def reflect_duration_issues(state: WorkflowState) -> WorkflowState:
     return state
 
 
-def _build_reflection_input(issues: list[DurationIssue]) -> str:
-    return json.dumps(issues, ensure_ascii=False, indent=2)
+def _build_reflection_input(issues: list[DurationIssue], state: dict[str, Any]) -> str:
+    payload = {
+        "plot_summary": state.get("plot_summary", ""),
+        "issues": issues,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def _fallback_replacements(

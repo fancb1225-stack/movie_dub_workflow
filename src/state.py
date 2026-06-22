@@ -25,7 +25,7 @@ class TtsSegment(TypedDict, total=False):
     speaker_id: str
 
 
-class DurationIssue(TypedDict):
+class DurationIssue(TypedDict, total=False):
     index: int
     start_ms: int
     end_ms: int
@@ -34,6 +34,11 @@ class DurationIssue(TypedDict):
     overrun_ms: int
     ratio: float
     text: str
+    en_text: str
+    zh_text: str
+    word_count: int
+    wpm: int
+    issue_types: list[str]
 
 
 class AdjustedPosition(TypedDict):

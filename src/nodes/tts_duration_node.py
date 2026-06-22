@@ -22,6 +22,8 @@ def tts_generate_and_detect(state: WorkflowState) -> WorkflowState:
         segments,
         int(duration_config.get("max_overrun_ms", 350)),
         float(duration_config.get("max_ratio", 1.12)),
+        zh_cues=state.get("corrected_cues", []),
+        plot_summary=state.get("plot_summary", ""),
     )
     report = build_tts_duration_report(segments, issues)
     report_path = config_path(config, "paths.reports_dir") / "tts_duration_report.json"
