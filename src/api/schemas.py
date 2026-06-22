@@ -4,12 +4,15 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.video_types import DEFAULT_VIDEO_TYPE
+
 
 class JobResponse(BaseModel):
     job_id: str
     status: str
     original_filename: str
     input_kind: str
+    video_type: str = DEFAULT_VIDEO_TYPE
     paths: dict[str, str]
     artifacts: dict[str, Any] = Field(default_factory=dict)
     reports: dict[str, Any] = Field(default_factory=dict)
@@ -127,6 +130,7 @@ class JobListItem(BaseModel):
     status: str
     original_filename: str
     input_kind: str
+    video_type: str = DEFAULT_VIDEO_TYPE
     created_at: str
 
 

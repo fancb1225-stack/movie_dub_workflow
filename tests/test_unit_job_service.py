@@ -49,6 +49,61 @@ class JobServiceTests(unittest.TestCase):
             self.assertEqual(Path(job["paths"]["input"]).name, "original.wav")
             self.assertTrue(Path(job["paths"]["input"]).exists())
 
+    def test_create_job_defaults_video_type_to_movie_commentary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = JobService(_config(tmp))
+            job = asyncio.run(service.create_job_from_upload(FakeUpload("clip.mp4", b"x")))
+
+            self.assertEqual(job["video_type"], "movie_commentary")
+            persisted = service.get_job(job["job_id"])
+            self.assertEqual(persisted["video_type"], "movie_commentary")
+
+    def test_create_job_persists_manju_video_type(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = JobService(_config(tmp))
+            job = asyncio.run(
+                service.create_job_from_upload(FakeUpload("clip.mp4", b"x"), video_type="manju")
+            )
+
+            self.assertEqual(job["video_type"], "manju")
+            persisted = service.get_job(job["job_id"])
+            self.assertEqual(persisted["video_type"], "manju")
+
+    def test_create_job_rejects_unknown_video_type(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = JobService(_config(tmp))
+            with self.assertRaises(ValueError):
+                asyncio.run(
+                    service.create_job_from_upload(FakeUpload("clip.mp4", b"x"), video_type="anime")
+                )
+
+    def test_get_job_backfills_default_video_type_for_legacy_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = JobService(_config(tmp))
+            job = asyncio.run(service.create_job_from_upload(FakeUpload("clip.mp4", b"x")))
+            del job["video_type"]
+            service.save_job(job)
+
+            persisted = service.get_job(job["job_id"])
+
+            self.assertEqual(persisted["video_type"], "movie_commentary")
+
+    def test_list_jobs_returns_video_type_with_default_for_legacy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = JobService(_config(tmp))
+            job_a = asyncio.run(service.create_job_from_upload(FakeUpload("a.mp4", b"x")))
+            job_b = asyncio.run(
+                service.create_job_from_upload(FakeUpload("b.mp3", b"x"), video_type="manju")
+            )
+            del job_a["video_type"]
+            service.save_job(job_a)
+
+            result = service.list_jobs()
+
+            by_id = {item["job_id"]: item for item in result["jobs"]}
+            self.assertEqual(by_id[job_a["job_id"]]["video_type"], "movie_commentary")
+            self.assertEqual(by_id[job_b["job_id"]]["video_type"], "manju")
+
     def test_create_job_rejects_unsupported_suffix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service = JobService(_config(tmp))
@@ -95,6 +150,7 @@ class JobServiceTests(unittest.TestCase):
                 self.assertIn("status", item)
                 self.assertIn("original_filename", item)
                 self.assertIn("input_kind", item)
+                self.assertIn("video_type", item)
                 self.assertIn("created_at", item)
 
     def test_list_jobs_returns_empty_when_no_jobs(self) -> None:

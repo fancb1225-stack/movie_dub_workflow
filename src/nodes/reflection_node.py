@@ -5,7 +5,7 @@ from typing import Any
 
 from src.config import config_path
 from src.llm_client import LLMClient
-from src.prompts import REFLECT_DURATION_ISSUES_PROMPT
+from src.prompt_registry import prompt_for
 from src.state import DurationIssue, SrtCue, WorkflowState
 from src.tools.file_tools import write_json, write_text
 from src.tools.srt_tools import format_srt, replace_text_for_indices
@@ -24,7 +24,7 @@ def reflect_duration_issues(state: WorkflowState) -> WorkflowState:
         state.get("final_cues", []), issues, config
     )
     response = LLMClient.from_config(config).complete(
-        REFLECT_DURATION_ISSUES_PROMPT,
+        prompt_for(config, "reflect_duration_issues"),
         _build_reflection_input(issues),
         json.dumps(
             [

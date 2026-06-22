@@ -4,7 +4,7 @@ import logging
 
 from src.config import config_path
 from src.llm_client import LLMClient
-from src.prompts import CRITIC_ZH_SRT_PROMPT
+from src.prompt_registry import prompt_for
 from src.state import SrtCue, WorkflowState
 from src.tools.file_tools import write_text
 from src.tools.srt_tools import clean_cues, format_srt, parse_srt
@@ -34,7 +34,7 @@ def critic_srt(state: WorkflowState) -> WorkflowState:
 
 def _critic_srt(config: dict, srt_text: str) -> str:
     client = LLMClient.from_config(config)
-    return client.complete(CRITIC_ZH_SRT_PROMPT, srt_text, srt_text)
+    return client.complete(prompt_for(config, "critic_zh_srt"), srt_text, srt_text)
 
 
 def _parse_or_fallback(srt_text: str, fallback_cues: list[SrtCue]) -> list[SrtCue]:

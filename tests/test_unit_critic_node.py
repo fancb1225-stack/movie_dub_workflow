@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from src.nodes.merge_and_critic_node import critic_srt
 from src.tools.srt_tools import format_srt, make_cue
+from src import manju_prompt, prompts
 
 
 class CriticNodeTests(unittest.TestCase):
@@ -23,6 +24,37 @@ class CriticNodeTests(unittest.TestCase):
             corrected_path = Path(state["config"]["paths"]["corrected_srt"])
             self.assertTrue(corrected_path.exists())
             self.assertEqual(corrected_path.read_text(encoding="utf-8"), state["cleaned_srt"])
+
+    def test_default_video_type_uses_movie_commentary_critic_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = _state(temp_dir)
+            client = RecordingClient(state["cleaned_srt"])
+
+            with patch("src.nodes.merge_and_critic_node.LLMClient.from_config", return_value=client):
+                critic_srt(state)
+
+            self.assertIs(client.system_prompt, prompts.CRITIC_ZH_SRT_PROMPT)
+
+    def test_manju_video_type_uses_manju_critic_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = _state(temp_dir)
+            state["config"]["job"] = {"video_type": "manju"}
+            client = RecordingClient(state["cleaned_srt"])
+
+            with patch("src.nodes.merge_and_critic_node.LLMClient.from_config", return_value=client):
+                critic_srt(state)
+
+            self.assertIs(client.system_prompt, manju_prompt.CRITIC_ZH_SRT_PROMPT)
+
+
+class RecordingClient:
+    def __init__(self, return_text: str):
+        self.return_text = return_text
+        self.system_prompt: str | None = None
+
+    def complete(self, system_prompt: str, user_content: str, fallback_text: str) -> str:
+        self.system_prompt = system_prompt
+        return self.return_text
 
 
 class FakeFailingClient:

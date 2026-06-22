@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from src.nodes.translate_node import translate_to_english
 from src.tools.srt_tools import format_srt, make_cue
+from src import manju_prompt, prompts
 
 
 class TranslateNodeTests(unittest.TestCase):
@@ -161,6 +162,31 @@ class TranslateNodeTests(unittest.TestCase):
             self.assertEqual(client.call_count, 1)
             self.assertEqual(len(result["final_cues"]), 4)
 
+    def test_default_video_type_uses_movie_commentary_translate_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = _state_with_count(temp_dir, count=2, allow_mock_fallback=False)
+            state["config"]["translation"]["chunk_size"] = 0
+            state["config"]["llm"] = _enabled_llm_config()
+            client = FakeChunkClient([_translated_chunk("Translated", 2)])
+
+            with patch("src.nodes.translate_node.LLMClient.from_config", return_value=client):
+                translate_to_english(state)
+
+            self.assertIs(client.last_system_prompt, prompts.TRANSLATE_TO_ENGLISH_SRT_PROMPT)
+
+    def test_manju_video_type_uses_manju_translate_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = _state_with_count(temp_dir, count=2, allow_mock_fallback=False)
+            state["config"]["translation"]["chunk_size"] = 0
+            state["config"]["llm"] = _enabled_llm_config()
+            state["config"]["job"] = {"video_type": "manju"}
+            client = FakeChunkClient([_translated_chunk("Translated", 2)])
+
+            with patch("src.nodes.translate_node.LLMClient.from_config", return_value=client):
+                translate_to_english(state)
+
+            self.assertIs(client.last_system_prompt, manju_prompt.TRANSLATE_TO_ENGLISH_SRT_PROMPT)
+
 
 def _state(temp_dir: str, allow_mock_fallback: bool) -> dict[str, Any]:
     cues = [
@@ -238,6 +264,7 @@ class FakeChunkClient:
     def __init__(self, responses: list[str]):
         self.responses = list(responses)
         self.inputs: list[str] = []
+        self.last_system_prompt: str | None = None
         self._next_index = 0
 
     @property
@@ -249,6 +276,7 @@ class FakeChunkClient:
 
     def complete(self, system_prompt: str, user_content: str, fallback_text: str) -> str:
         self.inputs.append(user_content)
+        self.last_system_prompt = system_prompt
         index = self._next_index
         self._next_index += 1
         if index < len(self.responses):

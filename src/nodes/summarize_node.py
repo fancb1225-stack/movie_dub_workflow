@@ -4,7 +4,7 @@ import logging
 
 from src.config import config_path
 from src.llm_client import LLMClient
-from src.prompts import SUMMARIZE_PLOT_PROMPT
+from src.prompt_registry import prompt_for
 from src.state import WorkflowState
 from src.tools.file_tools import write_text
 
@@ -17,7 +17,7 @@ def summarize_plot(state: WorkflowState) -> WorkflowState:
     source_srt = state.get("corrected_srt", "")
     fallback = _fallback_summary(state)
     summary = LLMClient.from_config(config).complete(
-        SUMMARIZE_PLOT_PROMPT,
+        prompt_for(config, "summarize_plot"),
         source_srt,
         fallback,
     )

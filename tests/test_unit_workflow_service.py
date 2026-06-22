@@ -9,7 +9,12 @@ from typing import Any
 from unittest.mock import patch
 
 from src.services.job_service import JobService
-from src.services.workflow_service import WorkflowService, _workflow_hint
+from src.services.workflow_service import (
+    WorkflowService,
+    _ensure_job_config_metadata,
+    _job_workflow_config,
+    _workflow_hint,
+)
 
 
 class WorkflowServiceTests(unittest.TestCase):
@@ -209,6 +214,50 @@ class WorkflowServiceTests(unittest.TestCase):
 
         self.assertIn("LLM 服务拒绝访问", hint)
         self.assertIn("IP 白名单", hint)
+
+    def test_job_workflow_config_writes_video_type_into_job_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = _config(temp_dir)
+            job = _create_job(config, "job-video-type")
+            job["video_type"] = "manju"
+
+            job_config = _job_workflow_config(config, job)
+
+            self.assertEqual(job_config["job"]["video_type"], "manju")
+            self.assertEqual(job_config["job"]["job_id"], job["job_id"])
+
+    def test_job_workflow_config_defaults_video_type_for_legacy_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = _config(temp_dir)
+            job = _create_job(config, "job-legacy")
+            job.pop("video_type", None)
+
+            job_config = _job_workflow_config(config, job)
+
+            self.assertEqual(job_config["job"]["video_type"], "movie_commentary")
+
+    def test_ensure_job_config_metadata_preserves_existing_video_type_on_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = _config(temp_dir)
+            job = _create_job(config, "job-resume")
+            job["video_type"] = "manju"
+            snapshot_config: dict[str, Any] = {"job": {"video_type": "movie_commentary"}}
+
+            _ensure_job_config_metadata(snapshot_config, job, overwrite=False)
+
+            self.assertEqual(snapshot_config["job"]["video_type"], "movie_commentary")
+
+    def test_ensure_job_config_metadata_backfills_missing_fields_on_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = _config(temp_dir)
+            job = _create_job(config, "job-resume-backfill")
+            job["video_type"] = "manju"
+            snapshot_config: dict[str, Any] = {}
+
+            _ensure_job_config_metadata(snapshot_config, job, overwrite=False)
+
+            self.assertEqual(snapshot_config["job"]["video_type"], "manju")
+            self.assertEqual(snapshot_config["job"]["job_id"], job["job_id"])
 
 
 def _config(temp_dir: str, allow_mock_asr_for_jobs: bool = True) -> dict[str, Any]:

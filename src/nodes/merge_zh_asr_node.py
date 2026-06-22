@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.config import config_path
 from src.llm_client import LLMClient
-from src.prompts import MERGE_ZH_ASR_SRT_PROMPT
+from src.prompt_registry import prompt_for
 from src.state import SrtCue, WorkflowState
 from src.tools.file_tools import write_json, write_text
 from src.tools.merge_tools import split_cues_by_gap
@@ -25,6 +25,7 @@ def merge_zh_asr_srt(state: WorkflowState) -> WorkflowState:
 
     client = LLMClient.from_config(config)
     chunks, hard_cuts = split_cues_by_gap(raw_cues, max_gap_ms=max_gap_ms)
+    merge_prompt = prompt_for(config, "merge_zh_asr_srt")
 
     used_fallback = False
     error: str | None = None
@@ -36,13 +37,13 @@ def merge_zh_asr_srt(state: WorkflowState) -> WorkflowState:
         error = "LLM merge is disabled; original ASR SRT was used."
     elif len(chunks) <= 1:
         # 单块:走原逻辑(单次 LLM 调用 + snap + 逐条容错)
-        merged_cues, used_fallback, error = _merge_single(client, raw_cues, max_retries)
+        merged_cues, used_fallback, error = _merge_single(client, raw_cues, max_retries, merge_prompt)
         if used_fallback:
             failed_chunks = [1]
     else:
         # 多块:并发合并 + 块级重试容错
         merged_cues, failed_chunks, error = _merge_chunks_concurrent(
-            client, chunks, max_retries, max_parallel
+            client, chunks, max_retries, max_parallel, merge_prompt
         )
         used_fallback = len(failed_chunks) == len(chunks)
 
@@ -72,14 +73,14 @@ def merge_zh_asr_srt(state: WorkflowState) -> WorkflowState:
 
 
 def _merge_single(
-    client: LLMClient, raw_cues: list[SrtCue], max_retries: int
+    client: LLMClient, raw_cues: list[SrtCue], max_retries: int, merge_prompt: str
 ) -> tuple[list[SrtCue], bool, str | None]:
     """单块合并:重试 max_retries 次,成功返回合并结果,全失败回退源 cue。"""
     fallback_srt = format_srt(raw_cues)
     last_error: str | None = None
     for attempt in range(max_retries + 1):
         try:
-            response = client.complete(MERGE_ZH_ASR_SRT_PROMPT, fallback_srt, fallback_srt)
+            response = client.complete(merge_prompt, fallback_srt, fallback_srt)
             normalized_cues = _snap_timestamps_to_source_boundaries(
                 clean_cues(parse_srt(response)), raw_cues
             )
@@ -98,6 +99,7 @@ def _merge_chunks_concurrent(
     chunks: list[list[SrtCue]],
     max_retries: int,
     max_parallel: int,
+    merge_prompt: str,
 ) -> tuple[list[SrtCue], list[int], str | None]:
     """多块并发合并,块级重试,失败块用源 cue 占位。"""
     worker_count = min(max_parallel, max(1, len(chunks)))
@@ -106,7 +108,7 @@ def _merge_chunks_concurrent(
     last_error: str | None = None
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         futures = {
-            executor.submit(_merge_chunk, client, chunk, idx, max_retries): idx
+            executor.submit(_merge_chunk, client, chunk, idx, max_retries, merge_prompt): idx
             for idx, chunk in enumerate(chunks)
         }
         for future in as_completed(futures):
@@ -127,6 +129,7 @@ def _merge_chunk(
     chunk_cues: list[SrtCue],
     chunk_index: int,
     max_retries: int,
+    merge_prompt: str,
 ) -> tuple[int, list[SrtCue], bool, str | None]:
     """合并单个分块,失败重试;耗尽用源 cue 占位。
     返回 (chunk_index, merged_cues, failed, error)。"""
@@ -134,7 +137,7 @@ def _merge_chunk(
     last_error: str | None = None
     for attempt in range(max_retries + 1):
         try:
-            response = client.complete(MERGE_ZH_ASR_SRT_PROMPT, chunk_srt, chunk_srt)
+            response = client.complete(merge_prompt, chunk_srt, chunk_srt)
             normalized = _snap_timestamps_to_source_boundaries(
                 clean_cues(parse_srt(response)), chunk_cues
             )

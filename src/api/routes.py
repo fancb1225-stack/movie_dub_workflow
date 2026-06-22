@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from src.api.schemas import (
@@ -27,6 +27,7 @@ from src.services.separation_service import SeparationService
 from src.services.speaker_service import SpeakerService
 from src.services.video_service import VideoService
 from src.services.workflow_service import WorkflowService
+from src.video_types import DEFAULT_VIDEO_TYPE
 
 
 router = APIRouter(prefix="/api")
@@ -47,10 +48,11 @@ def list_jobs(config: dict[str, Any] = Depends(get_config)) -> dict[str, Any]:
 @router.post("/jobs", response_model=JobResponse)
 async def create_job(
     file: UploadFile = File(...),
+    video_type: str = Form(DEFAULT_VIDEO_TYPE),
     config: dict[str, Any] = Depends(get_config),
 ) -> dict[str, Any]:
     try:
-        return await JobService(config).create_job_from_upload(file)
+        return await JobService(config).create_job_from_upload(file, video_type=video_type)
     except Exception as exc:
         raise _to_http_exception(exc) from exc
 

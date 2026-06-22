@@ -4,7 +4,7 @@ import logging
 
 from src.config import config_path
 from src.llm_client import LLMClient
-from src.prompts import MERGE_ZH_ASR_SRT_PROMPT
+from src.prompt_registry import prompt_for
 from src.state import SrtCue, WorkflowState
 from src.tools.file_tools import write_json, write_text
 from src.tools.srt_tools import clean_cues, format_srt, parse_srt, reindex_cues
@@ -36,6 +36,7 @@ def restitch_merge_cuts(state: WorkflowState) -> WorkflowState:
     merged_cues: list[SrtCue] = list(state.get("merged_asr_cues") or [])
     max_retries = int(config.get("translation", {}).get("chunk_max_retries", 3))
     client = LLMClient.from_config(config)
+    merge_prompt = prompt_for(config, "merge_zh_asr_srt")
 
     restitched_count = 0
     failed_count = 0
@@ -43,7 +44,7 @@ def restitch_merge_cuts(state: WorkflowState) -> WorkflowState:
     if client.enabled():
         for cut in hard_cuts:
             try:
-                merged_cues, ok = _restitch_one(client, merged_cues, cut, max_retries)
+                merged_cues, ok = _restitch_one(client, merged_cues, cut, max_retries, merge_prompt)
                 if ok:
                     restitched_count += 1
                 else:
@@ -81,6 +82,7 @@ def _restitch_one(
     cues: list[SrtCue],
     cut: dict,
     max_retries: int,
+    merge_prompt: str,
 ) -> tuple[list[SrtCue], bool]:
     """对单个硬切点重合并。返回 (新 cues 列表, 是否成功)。"""
     cut_start_ms = int(cut.get("cut_start_ms", 0))
@@ -104,7 +106,7 @@ def _restitch_one(
     for attempt in range(max_retries + 1):
         try:
             response = client.complete(
-                MERGE_ZH_ASR_SRT_PROMPT,
+                merge_prompt,
                 window_srt,
                 window_srt,
             )

@@ -20,6 +20,7 @@ from src.state import WorkflowState
 from src.tools.asr_tools import transcribe_mp3_to_srt, write_asr_report
 from src.tools.file_tools import ensure_dir, write_json
 from src.tools.srt_tools import parse_srt
+from src.video_types import DEFAULT_VIDEO_TYPE, normalize_video_type
 
 logger = logging.getLogger(__name__)
 
@@ -342,6 +343,7 @@ class WorkflowService:
                 extra={"langgraph_progress": {"event": "start", "steps": WORKFLOW_STEPS}},
             )
             job_config = state.get("config", {})
+            _ensure_job_config_metadata(job_config, job, overwrite=False)
             _apply_overrides(job_config, overrides)
             state["config"] = job_config
             final_state = state
@@ -476,7 +478,29 @@ def _job_workflow_config(
         job_config.setdefault("audio", {})["background_mp3"] = str(background_audio)
         job_config.setdefault("audio", {})["background_wav"] = str(background_audio)
         job_config["paths"]["background_mp3"] = str(background_audio)
+    _ensure_job_config_metadata(job_config, job, overwrite=True)
     return job_config
+
+
+def _ensure_job_config_metadata(
+    config: dict[str, Any], job: dict[str, Any], *, overwrite: bool = False
+) -> None:
+    """Populate config["job"] with job metadata for prompt selection.
+
+    New workflow builds pass overwrite=True to write current job metadata.
+    Resume from snapshot passes overwrite=False so an existing video_type is
+    preserved, avoiding mid-workflow prompt style switches.
+    """
+    config.setdefault("job", {})
+    metadata = {
+        "job_id": job.get("job_id", ""),
+        "video_type": normalize_video_type(job.get("video_type", DEFAULT_VIDEO_TYPE)),
+        "original_filename": job.get("original_filename", ""),
+        "input_kind": job.get("input_kind", ""),
+    }
+    for key, value in metadata.items():
+        if overwrite or key not in config["job"]:
+            config["job"][key] = value
 
 
 def _apply_forced_job_asr_provider(config: dict[str, Any]) -> None:

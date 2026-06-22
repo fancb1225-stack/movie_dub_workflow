@@ -7,6 +7,7 @@ from typing import Any, Protocol
 
 from src.config import config_path
 from src.tools.file_tools import ensure_dir, read_json, write_json
+from src.video_types import DEFAULT_VIDEO_TYPE, normalize_video_type
 
 
 ALLOWED_UPLOAD_SUFFIXES = {".mp4", ".mp3", ".wav"}
@@ -25,12 +26,15 @@ class JobService:
         self.config = config
         self.root_dir = ensure_dir(config_path(config, "jobs.root_dir"))
 
-    async def create_job_from_upload(self, file: UploadFileLike) -> dict[str, Any]:
+    async def create_job_from_upload(
+        self, file: UploadFileLike, video_type: str = DEFAULT_VIDEO_TYPE
+    ) -> dict[str, Any]:
         filename = file.filename or "input.bin"
         suffix = Path(filename).suffix.lower()
         if suffix not in ALLOWED_UPLOAD_SUFFIXES:
             allowed = ", ".join(sorted(ALLOWED_UPLOAD_SUFFIXES))
             raise ValueError(f"Unsupported upload type '{suffix}'. Allowed: {allowed}")
+        normalized_video_type = normalize_video_type(video_type)
         job_id = uuid.uuid4().hex
         job_dir = self.job_dir(job_id)
         input_dir = ensure_dir(job_dir / "input")
@@ -46,6 +50,7 @@ class JobService:
             "status": "created",
             "original_filename": filename,
             "input_kind": suffix.lstrip("."),
+            "video_type": normalized_video_type,
             "paths": {
                 "job_dir": str(job_dir),
                 "input": str(input_path),
@@ -63,7 +68,9 @@ class JobService:
         path = self.job_json_path(job_id)
         if not path.exists():
             raise FileNotFoundError(f"Job not found: {job_id}")
-        return read_json(path)
+        job = read_json(path)
+        job.setdefault("video_type", DEFAULT_VIDEO_TYPE)
+        return job
 
     def save_job(self, job: dict[str, Any]) -> dict[str, Any]:
         job["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -114,6 +121,7 @@ class JobService:
                 "status": data.get("status", ""),
                 "original_filename": data.get("original_filename", ""),
                 "input_kind": data.get("input_kind", ""),
+                "video_type": data.get("video_type", DEFAULT_VIDEO_TYPE),
                 "created_at": data.get("created_at", ""),
             })
             if len(jobs) >= MAX_LIST_JOBS:

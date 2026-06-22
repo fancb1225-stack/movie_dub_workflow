@@ -89,7 +89,8 @@
     }
 
     input[type="text"],
-    input[type="file"] {
+    input[type="file"],
+    select {
       width: 100%;
       min-width: 0;
       border: 1px solid var(--line);
@@ -662,12 +663,20 @@
           <div class="panel-body">
             <div class="upload-box">
               <input id="fileInput" type="file" accept=".mp4,.mp3,.wav,video/mp4,audio/mpeg,audio/wav,audio/x-wav">
+              <div class="setting-row">
+                <label for="videoTypeSelect">视频类型</label>
+                <select id="videoTypeSelect">
+                  <option value="movie_commentary">影视解说</option>
+                  <option value="manju">漫剧</option>
+                </select>
+              </div>
               <button id="uploadBtn" class="primary wide" type="button">创建任务</button>
             </div>
             <div class="meta-list">
               <div class="meta"><strong>任务 ID</strong><span id="jobId" class="mono">-</span></div>
               <div class="meta"><strong>状态</strong><span id="jobStatus">-</span></div>
               <div class="meta"><strong>输入类型</strong><span id="inputKind">-</span></div>
+              <div class="meta"><strong>视频类型</strong><span id="videoType">-</span></div>
             </div>
             <button id="openJobBtn" type="button">打开之前任务</button>
           </div>
@@ -795,12 +804,14 @@
     const els = {
       apiBase: document.getElementById('apiBase'),
       fileInput: document.getElementById('fileInput'),
+      videoTypeSelect: document.getElementById('videoTypeSelect'),
       uploadBtn: document.getElementById('uploadBtn'),
       healthBtn: document.getElementById('healthBtn'),
       uploadStatus: document.getElementById('uploadStatus'),
       jobId: document.getElementById('jobId'),
       jobStatus: document.getElementById('jobStatus'),
       inputKind: document.getElementById('inputKind'),
+      videoType: document.getElementById('videoType'),
       message: document.getElementById('message'),
       output: document.getElementById('output'),
       probeBtn: document.getElementById('probeBtn'),
@@ -871,6 +882,7 @@
       els.jobId.textContent = job ? job.job_id : '-';
       els.jobStatus.textContent = job ? job.status : '-';
       els.inputKind.textContent = job ? job.input_kind : '-';
+      els.videoType.textContent = job ? formatVideoType(job.video_type) : '-';
       els.uploadStatus.textContent = job ? job.status : '空闲';
       const enabled = Boolean(job);
       for (const button of [
@@ -970,8 +982,13 @@
       }).join('');
     }
 
-    function formatBytes(value) {
-      const size = Number(value || 0);
+    function formatVideoType(value) {
+      if (value === 'manju') return '漫剧';
+      if (value === 'movie_commentary') return '影视解说';
+      return value || '-';
+    }
+
+    function formatBytes(value) {      const size = Number(value || 0);
       if (size < 1024) return `${size} B`;
       if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
       if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
@@ -1010,7 +1027,7 @@
           <div class="job-list-item" data-job-id="${escapeHtml(job.job_id)}">
             <div>
               <div class="job-filename">${escapeHtml(job.original_filename)}</div>
-              <div class="job-meta">${escapeHtml(job.input_kind)} · ${escapeHtml(job.status)} · ${formatDate(job.created_at)}</div>
+              <div class="job-meta">${formatVideoType(job.video_type)} · ${escapeHtml(job.input_kind)} · ${escapeHtml(job.status)} · ${formatDate(job.created_at)}</div>
             </div>
             <span class="job-id-short">${escapeHtml(job.job_id.slice(0, 8))}…</span>
           </div>
@@ -1071,6 +1088,7 @@
       try {
         const form = new FormData();
         form.append('file', file);
+        form.append('video_type', els.videoTypeSelect.value || 'movie_commentary');
         const job = await requestJson('/api/jobs', {
           method: 'POST',
           body: form
