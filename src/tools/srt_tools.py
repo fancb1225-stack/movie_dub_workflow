@@ -25,15 +25,18 @@ def parse_srt(srt_text: str) -> list[SrtCue]:
     return reindex_cues(cues)
 
 
-def format_srt(cues: Iterable[SrtCue]) -> str:
+def format_srt(cues: Iterable[SrtCue], include_speaker: bool = False) -> str:
     blocks: list[str] = []
     for cue in reindex_cues(list(cues)):
+        text = cue["text"].strip()
+        if include_speaker and cue.get("speaker_id"):
+            text = f"[{cue['speaker_id']}] {text}"
         blocks.append(
             "\n".join(
                 [
                     str(cue["index"]),
                     f'{cue["start"]} --> {cue["end"]}',
-                    cue["text"].strip(),
+                    text,
                 ]
             )
         )

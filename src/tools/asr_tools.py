@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -17,11 +18,25 @@ def transcribe_mp3_to_srt(
     input_path = Path(input_mp3)
     asr_config = config.get("asr", {})
     provider = str(asr_config.get("provider", "mock")).lower()
+    cues: list[SrtCue] = []
+    diarized = False
     if provider == "faster_whisper":
         cues = _transcribe_with_faster_whisper(input_path, asr_config)
+    elif provider == "whisperx":
+        try:
+            cues = _transcribe_with_whisperx(input_path, asr_config)
+            diarized = any("speaker_id" in cue for cue in cues)
+        except RuntimeError:
+            if asr_config.get("whisperx_missing_dep_fallback", False):
+                cues = _transcribe_with_faster_whisper(input_path, asr_config)
+            else:
+                raise
     else:
         cues = _mock_transcribe(input_path, asr_config)
-    srt_text = format_srt(cues)
+    speakers = sorted(
+        {cue["speaker_id"] for cue in cues if cue.get("speaker_id")}
+    )
+    srt_text = format_srt(cues, include_speaker=bool(asr_config.get("srt_emit_speaker", False)))
     write_text(output_srt, srt_text)
     return {
         "provider": provider,
@@ -30,6 +45,8 @@ def transcribe_mp3_to_srt(
         "subtitle_count": len(cues),
         "cues": cues,
         "srt": srt_text,
+        "speakers": speakers,
+        "diarized": diarized,
     }
 
 
@@ -39,8 +56,119 @@ def write_asr_report(path: str | Path, asr_result: dict[str, Any]) -> str:
         "input_mp3": asr_result.get("input_mp3"),
         "output_srt": asr_result.get("output_srt"),
         "subtitle_count": asr_result.get("subtitle_count", 0),
+        "speakers": asr_result.get("speakers", []),
+        "diarized": asr_result.get("diarized", False),
     }
     return write_json(path, report)
+
+
+def map_whisperx_result_to_cues(
+    result: dict[str, Any], speaker_normalize: bool = True
+) -> list[SrtCue]:
+    """把 whisperx transcribe + assign_word_speakers 后的 result 映射为 SrtCue 列表。
+
+    纯函数，不依赖 whisperx 运行时，便于单测。
+    result["segments"] 每项含 start/end/text/speaker(可能缺失)。
+    speaker_normalize 为 True 时把 "SPEAKER_00" 归一化为 "speaker_1"。
+    """
+    cues: list[SrtCue] = []
+    for idx, segment in enumerate(result.get("segments", []), start=1):
+        start_ms = int(round(float(segment.get("start", 0.0)) * 1000))
+        end_ms = int(round(float(segment.get("end", 0.0)) * 1000))
+        text = str(segment.get("text", "")).strip()
+        cue = make_cue(idx, start_ms, end_ms, text)
+        speaker = segment.get("speaker")
+        if speaker:
+            cue["speaker_id"] = _normalize_speaker(str(speaker)) if speaker_normalize else str(speaker)
+        cues.append(cue)
+    return cues
+
+
+def _normalize_speaker(label: str) -> str:
+    """SPEAKER_00 -> speaker_1, SPEAKER_01 -> speaker_2。无法解析时原样返回。"""
+    try:
+        num = int(label.rsplit("_", 1)[-1])
+        return f"speaker_{num + 1}"
+    except (ValueError, IndexError):
+        return label
+
+
+def _ensure_ffmpeg_on_path(config: dict[str, Any]) -> None:
+    """whisperx.load_audio 调用 ffmpeg 子进程，需把项目 ffmpeg/bin 目录加入 PATH。
+
+    config 可能是完整 config（含 ffmpeg.ffmpeg_path）或仅 asr_config；两者都尝试。
+    """
+    candidates: list[Path] = []
+    ffmpeg_cfg = config.get("ffmpeg") if isinstance(config, dict) else None
+    if isinstance(ffmpeg_cfg, dict) and ffmpeg_cfg.get("ffmpeg_path"):
+        candidates.append(Path(str(ffmpeg_cfg["ffmpeg_path"])).resolve().parent)
+    project_root = Path(__file__).resolve().parents[2]
+    candidates.append(project_root / "ffmpeg" / "bin")
+    path_sep = os.pathsep
+    existing = os.environ.get("PATH", "")
+    for bin_dir in candidates:
+        if bin_dir.exists() and str(bin_dir) not in existing.split(path_sep):
+            os.environ["PATH"] = f"{bin_dir}{path_sep}{existing}"
+            return
+
+
+def _transcribe_with_whisperx(
+    input_path: Path, asr_config: dict[str, Any]
+) -> list[SrtCue]:
+    if not input_path.exists():
+        raise FileNotFoundError(f"ASR input does not exist: {input_path}")
+    try:
+        import whisperx  # type: ignore
+        from whisperx.diarize import DiarizationPipeline, assign_word_speakers  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "ASR provider whisperx requires the whisperx package (and torch/torchaudio)."
+        ) from exc
+
+    device = str(asr_config.get("device", "cpu"))
+    compute_type = str(asr_config.get("compute_type", "default"))
+    language = str(asr_config.get("language", "zh"))
+    model_name = str(asr_config.get("model_name", "small"))
+    batch_size = int(asr_config.get("batch_size", 8))
+
+    _ensure_ffmpeg_on_path(asr_config)
+
+    model = whisperx.load_model(
+        model_name, device=device, compute_type=compute_type, language=language
+    )
+    audio = whisperx.load_audio(str(input_path))
+    result = model.transcribe(audio, batch_size=batch_size, language=language)
+
+    if asr_config.get("align", True):
+        try:
+            align_model, align_meta = whisperx.load_align_model(language, device)
+            result = whisperx.align(result, align_model, align_meta, audio, device)
+        except Exception:
+            # 对齐失败不阻断，退回未对齐的 segment 级结果。
+            pass
+
+    if asr_config.get("diarize", True):
+        hf_token = os.getenv(str(asr_config.get("hf_token_env", "HF_TOKEN")), "")
+        try:
+            if not hf_token:
+                raise RuntimeError(
+                    "whisperx diarization requires a HuggingFace token "
+                    f"(env {asr_config.get('hf_token_env', 'HF_TOKEN')}); "
+                    "accept pyannote speaker-diarization-3.1 and segmentation-3.0 licenses on HF."
+                )
+            pipeline = DiarizationPipeline(token=hf_token, device=device)
+            diarize_segments = pipeline(
+                audio,
+                min_speakers=asr_config.get("min_speakers"),
+                max_speakers=asr_config.get("max_speakers"),
+            )
+            result = assign_word_speakers(diarize_segments, result)
+        except Exception as exc:
+            if not asr_config.get("diarize_fallback_to_asr", True):
+                raise RuntimeError(f"whisperx diarization failed: {exc}") from exc
+            # 退回纯 ASR：不分配 speaker，result 已有的 segments 继续使用。
+
+    return map_whisperx_result_to_cues(result, speaker_normalize=True)
 
 
 def _transcribe_with_faster_whisper(

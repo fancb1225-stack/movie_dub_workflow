@@ -55,7 +55,7 @@ outputs/jobs/<job_id>/
 2. API 路由只负责参数校验、调用 service、返回响应。
 3. service 负责组织业务流程和写 job 报告。
 4. tools 是普通函数模块，不依赖 FastAPI 或 LangGraph。
-5. 不要在代码中硬编码 API Key。
+5. 不要在代码中硬编码 API Key, 而是从.env读取。
 6. 不要用 LLM 做媒体处理。
 7. 不要把 tools 暴露给 LLM。
 8. 不要实现 ReAct Agent。
@@ -86,8 +86,7 @@ outputs/jobs/<job_id>/
 
 ## 本阶段禁止事项
 
-- 不实现真实多音色配音。
-- 不实现 pyannote 或声纹聚类式真实说话人识别。
+- 真实多角色 ASR（whisperx diarization）已支持；下游 merge/critic/translate/TTS 暂不透传 speaker_id，后续任务处理。
 - 不烧录硬字幕。
 - 不封装软字幕轨。
 - 不把原始中文解说音频当作背景音。
@@ -112,5 +111,5 @@ src/prompts.py
 
 ## git 规范
 
-每次修改完代码自动提交到远程仓库.
-在commit和push等操作前由我确认.
+每次修改完代码自动提交git commit.
+push操作由我执行.

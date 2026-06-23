@@ -53,7 +53,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "workflow": {
         "allow_mock_asr_for_jobs": False,
-        "force_job_asr_provider": "faster_whisper",
+        "force_job_asr_provider": "whisperx",
     },
     "asr": {
         "provider": "mock",
@@ -63,6 +63,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "compute_type": "int8",
         "vad_filter": True,
         "mock_when_missing_input": True,
+        "hf_token_env": "HF_TOKEN",
+        "diarize": True,
+        "min_speakers": 1,
+        "max_speakers": 4,
+        "batch_size": 8,
+        "align": True,
+        "diarize_fallback_to_asr": True,
+        "whisperx_missing_dep_fallback": False,
+        "srt_emit_speaker": False,
     },
     "llm": {
         "api_key_env": "LLM_API_KEY",

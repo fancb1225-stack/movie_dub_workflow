@@ -46,7 +46,7 @@ video:
 
 workflow:
   allow_mock_asr_for_jobs: false
-  force_job_asr_provider: faster_whisper
+  force_job_asr_provider: whisperx
 
 asr:
   provider: mock
@@ -56,6 +56,16 @@ asr:
   compute_type: int8
   vad_filter: true
   mock_when_missing_input: true
+  # whisperx 专属:
+  hf_token_env: HF_TOKEN        # diarization 用的 HuggingFace token 环境变量名(需先在 HF 接受 pyannote 许可)
+  diarize: true                 # 开启说话人分离
+  min_speakers: 1
+  max_speakers: 4
+  batch_size: 8
+  align: true                   # 词级对齐
+  diarize_fallback_to_asr: true # diarization 失败时退回纯 ASR(无 speaker_id)
+  whisperx_missing_dep_fallback: false  # whisperx 缺依赖时是否回退 faster_whisper
+  srt_emit_speaker: false       # SRT 文件是否输出 [speaker_1] 前缀
 
 llm:
   api_key_env: LLM_API_KEY
