@@ -58,9 +58,9 @@ class WhisperxProviderDispatchTests(unittest.TestCase):
 
     def test_whisperx_provider_dispatch(self) -> None:
         with tempfile.TemporaryDirectory() as d:
-            out = Path(d) / "out.srt"
+            out = Path(d) / "out.words.json"
             fake_cues = map_whisperx_result_to_cues(_whisperx_result())
-            with patch.object(asr_tools, "_transcribe_with_whisperx", return_value=fake_cues) as m:
+            with patch.object(asr_tools, "_transcribe_with_whisperx", return_value=(fake_cues, [])) as m:
                 result = transcribe_mp3_to_srt(
                     Path(d) / "x.mp3", out, {"asr": {"provider": "whisperx"}}
                 )
@@ -71,7 +71,7 @@ class WhisperxProviderDispatchTests(unittest.TestCase):
 
     def test_whisperx_missing_dep_falls_back_to_faster_whisper(self) -> None:
         with tempfile.TemporaryDirectory() as d:
-            out = Path(d) / "out.srt"
+            out = Path(d) / "out.words.json"
             fake_cues = map_whisperx_result_to_cues(_whisperx_result(with_speaker=False))
             with patch.object(
                 asr_tools, "_transcribe_with_whisperx", side_effect=RuntimeError("no whisperx")
@@ -89,7 +89,7 @@ class WhisperxProviderDispatchTests(unittest.TestCase):
 
     def test_whisperx_missing_dep_no_fallback_raises(self) -> None:
         with tempfile.TemporaryDirectory() as d:
-            out = Path(d) / "out.srt"
+            out = Path(d) / "out.words.json"
             with patch.object(
                 asr_tools, "_transcribe_with_whisperx", side_effect=RuntimeError("no whisperx")
             ):
@@ -148,12 +148,13 @@ class WhisperxTranscribeTests(unittest.TestCase):
             wav = Path(d) / "x.wav"
             wav.write_bytes(b"")
             with patch.dict(sys.modules, {"whisperx": fake, "whisperx.diarize": fake.diarize}):
-                cues = _transcribe_with_whisperx(
+                cues, words = _transcribe_with_whisperx(
                     wav,
                     {"diarize": True, "diarize_fallback_to_asr": True, "hf_token_env": "HF_TOKEN"},
                 )
         self.assertEqual(len(cues), 1)
         self.assertNotIn("speaker_id", cues[0])
+        self.assertEqual(words, [])
 
     def test_diarize_failure_without_fallback_raises(self) -> None:
         fake = self._install_fake_whisperx(diarize_fail=True)
@@ -174,7 +175,7 @@ class WhisperxTranscribeTests(unittest.TestCase):
             wav.write_bytes(b"")
             with patch.dict(sys.modules, {"whisperx": fake, "whisperx.diarize": fake.diarize}):
                 with patch("os.getenv", return_value=""):
-                    cues = _transcribe_with_whisperx(
+                    cues, _words = _transcribe_with_whisperx(
                         wav,
                         {"diarize": True, "diarize_fallback_to_asr": True, "hf_token_env": "HF_TOKEN"},
                     )
@@ -187,7 +188,7 @@ class WhisperxTranscribeTests(unittest.TestCase):
             wav.write_bytes(b"")
             with patch.dict(sys.modules, {"whisperx": fake, "whisperx.diarize": fake.diarize}):
                 with patch("os.getenv", return_value="fake-token"):
-                    cues = _transcribe_with_whisperx(
+                    cues, _words = _transcribe_with_whisperx(
                         wav,
                         {"diarize": True, "diarize_fallback_to_asr": True, "hf_token_env": "HF_TOKEN"},
                     )

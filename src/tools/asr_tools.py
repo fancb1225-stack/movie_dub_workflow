@@ -5,27 +5,43 @@ from pathlib import Path
 from typing import Any
 
 from src.state import SrtCue
+from src.tools.asr_words import (
+    extract_whisperx_words,
+    split_words_to_short_cues,
+    write_asr_words_json,
+)
 from src.tools.duration_tools import get_audio_duration_ms
-from src.tools.file_tools import write_json, write_text
+from src.tools.file_tools import write_json
 from src.tools.srt_tools import format_srt, make_cue
 
 
 def transcribe_mp3_to_srt(
     input_mp3: str | Path,
-    output_srt: str | Path,
+    output_words_json: str | Path | None,
     config: dict[str, Any],
 ) -> dict[str, Any]:
+    """ASR 转写,主产物为词级时间戳 JSON。
+
+    - whisperx 分支:输出 zh_raw.words.json,raw_cues 由 words 切短句派生,
+      不再写 zh_raw.srt(SRT 字符串仍放进返回值,供调用方按需落盘)。
+    - faster_whisper/mock 分支:无真实 words,words=[],不写 words.json。
+    output_words_json 为 None 且无 words 时不写文件。
+    """
     input_path = Path(input_mp3)
     asr_config = config.get("asr", {})
     provider = str(asr_config.get("provider", "mock")).lower()
     cues: list[SrtCue] = []
+    words: list[dict[str, Any]] = []
+    words_json_path: str | None = None
     diarized = False
     if provider == "faster_whisper":
         cues = _transcribe_with_faster_whisper(input_path, asr_config)
     elif provider == "whisperx":
         try:
-            cues = _transcribe_with_whisperx(input_path, asr_config)
+            cues, words = _transcribe_with_whisperx(input_path, asr_config)
             diarized = any("speaker_id" in cue for cue in cues)
+            if output_words_json is not None:
+                words_json_path = write_asr_words_json(output_words_json, words)
         except RuntimeError:
             if asr_config.get("whisperx_missing_dep_fallback", False):
                 cues = _transcribe_with_faster_whisper(input_path, asr_config)
@@ -37,13 +53,15 @@ def transcribe_mp3_to_srt(
         {cue["speaker_id"] for cue in cues if cue.get("speaker_id")}
     )
     srt_text = format_srt(cues, include_speaker=bool(asr_config.get("srt_emit_speaker", False)))
-    write_text(output_srt, srt_text)
     return {
         "provider": provider,
         "input_mp3": str(input_path),
-        "output_srt": str(output_srt),
+        "words_json": words_json_path,
+        "output_srt": None,
         "subtitle_count": len(cues),
         "cues": cues,
+        "words": words,
+        "word_count": len(words),
         "srt": srt_text,
         "speakers": speakers,
         "diarized": diarized,
@@ -54,8 +72,10 @@ def write_asr_report(path: str | Path, asr_result: dict[str, Any]) -> str:
     report = {
         "provider": asr_result.get("provider"),
         "input_mp3": asr_result.get("input_mp3"),
+        "words_json": asr_result.get("words_json"),
         "output_srt": asr_result.get("output_srt"),
         "subtitle_count": asr_result.get("subtitle_count", 0),
+        "word_count": asr_result.get("word_count", 0),
         "speakers": asr_result.get("speakers", []),
         "diarized": asr_result.get("diarized", False),
     }
@@ -114,7 +134,11 @@ def _ensure_ffmpeg_on_path(config: dict[str, Any]) -> None:
 
 def _transcribe_with_whisperx(
     input_path: Path, asr_config: dict[str, Any]
-) -> list[SrtCue]:
+) -> tuple[list[SrtCue], list[dict[str, Any]]]:
+    """whisperx 转写 + 对齐 + diarization,返回 (短句 cues, 词级 words)。
+
+    cues 由 words 经标点/时长/字数切短句派生;words 保留逐词时间戳与 speaker。
+    """
     if not input_path.exists():
         raise FileNotFoundError(f"ASR input does not exist: {input_path}")
     try:
@@ -168,7 +192,17 @@ def _transcribe_with_whisperx(
                 raise RuntimeError(f"whisperx diarization failed: {exc}") from exc
             # 退回纯 ASR：不分配 speaker，result 已有的 segments 继续使用。
 
-    return map_whisperx_result_to_cues(result, speaker_normalize=True)
+    words = extract_whisperx_words(result, speaker_normalize=True)
+    if words:
+        cues = split_words_to_short_cues(
+            words,
+            max_duration_ms=int(asr_config.get("word_cue_max_duration_ms", 6000)),
+            max_chars=int(asr_config.get("word_cue_max_chars", 30)),
+        )
+    else:
+        # 无词级数据(对齐失败或旧格式):回退 segment 级映射
+        cues = map_whisperx_result_to_cues(result, speaker_normalize=True)
+    return cues, words
 
 
 def _transcribe_with_faster_whisper(

@@ -14,6 +14,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "background_mp3": "input/background.mp3",
         "outputs_dir": "outputs",
         "asr_srt": "outputs/asr/zh_raw.srt",
+        "asr_words": "outputs/asr/zh_raw.words.json",
         "merged_asr_srt": "outputs/merged/zh_asr_merged.srt",
         "cleaned_srt": "outputs/cleaned/zh_cleaned.srt",
         "corrected_srt": "outputs/critic/zh_corrected.srt",
@@ -72,6 +73,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "diarize_fallback_to_asr": True,
         "whisperx_missing_dep_fallback": False,
         "srt_emit_speaker": False,
+        "word_cue_max_duration_ms": 6000,
+        "word_cue_max_chars": 30,
     },
     "llm": {
         "api_key_env": "LLM_API_KEY",

@@ -118,6 +118,7 @@ def _state(temp_dir: str) -> dict:
         "config": {
             "project_root": temp_dir,
             "paths": {
+                "asr_srt": str(root / "asr" / "zh_raw.srt"),
                 "merged_asr_srt": str(root / "merged" / "zh_asr_merged.srt"),
                 "reports_dir": str(root / "reports"),
             },

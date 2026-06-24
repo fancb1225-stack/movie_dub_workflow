@@ -18,6 +18,11 @@ def merge_zh_asr_srt(state: WorkflowState) -> WorkflowState:
     logger.info("merge_zh_asr_srt: entering node")
     config = state["config"]
     raw_cues = state.get("raw_cues") or clean_cues(parse_srt(state.get("raw_srt", "")))
+    # ASR 主产物已改为词级 JSON;此处由 raw_cues 派生短句 SRT 落盘,
+    # 满足 raw_srt artifact/API/resume 对 zh_raw.srt 的文件契约。
+    raw_srt_text = format_srt(raw_cues)
+    write_text(config_path(config, "paths.asr_srt"), raw_srt_text)
+    state["raw_srt"] = raw_srt_text
     srt_config = config.get("srt", {})
     max_gap_ms = int(srt_config.get("merge_max_gap_ms", 450))
     max_retries = int(config.get("translation", {}).get("chunk_max_retries", 3))

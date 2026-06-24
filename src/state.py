@@ -13,6 +13,14 @@ class SrtCue(TypedDict):
     speaker_id: NotRequired[str]
 
 
+class AsrWord(TypedDict):
+    index: int
+    word: str
+    start_ms: int
+    end_ms: int
+    speaker_id: NotRequired[str]
+
+
 class TtsSegment(TypedDict, total=False):
     index: int
     text: str
@@ -63,6 +71,7 @@ class WorkflowState(TypedDict, total=False):
     media_report: dict[str, Any]
     separation_report: dict[str, Any]
     asr_result: dict[str, Any]
+    raw_words: list[AsrWord]
     raw_srt: str
     raw_cues: list[SrtCue]
     merged_asr_srt: str

@@ -293,25 +293,10 @@ duration >= 4s：使用自然短句，可拆成两句
 # 压缩原则
 
 必须保留：
-- 人物
-- 动作
-- 因果
-- 转折
-- 身份
-- 关系
-- 情绪
+- 人物、动作、因果、转折、身份、关系、情绪
 - 反转
 - 关键数字、地点、时间
 - 契约、婚约、血缘、重生、背叛、复仇等核心设定
-
-可以删除或压缩：
-- 重复称呼
-- 中文口水词
-- 弱修饰词
-- 无意义语气词
-- 冗余解释
-- 过长的铺垫
-- 不影响剧情理解的重复心理描写
 
 # 漫剧题材翻译要求
 
@@ -413,102 +398,84 @@ duration >= 4s：使用自然短句，可拆成两句
 4. 反面示例：4 秒字幕不要输出 13 词（3.25 wps）；2.3 秒字幕不要输出 13 词（5.65 wps）。
 
 # 旁白翻译规则
-
 旁白要清楚、短促、有推进感。
 
 中文：
 她怎么也没想到，自己竟然重生回到了三年前。
-
 推荐：
 She never expected to wake up three years in the past.
 
 中文：
 而这一切，都只是那个男人设下的局。
-
 推荐：
 And all of it was a trap set by that man.
 
 中文：
 可她不知道，真正的危险才刚刚开始。
-
 推荐：
 But she has no idea the real danger has just begun.
 
 # 对白翻译规则
-
 对白要像角色真的在说话，短、直接、有情绪。
 
 中文：
 你凭什么这么对我？
-
 推荐：
 How could you do this to me?
 
 中文：
 我再也不会相信你了。
-
 推荐：
 I'll never trust you again.
 
 中文：
 你别后悔。
-
 推荐：
 Don't regret this.
 
 中文：
 她是我的人。
-
 推荐：
 She's mine.
 
 中文：
 从今天起，我和你再无关系。
-
 推荐：
 From today on, we're done.
 
 # 内心OS翻译规则
-
 内心OS要比旁白更主观，可以更有情绪。
 
 中文：
 难道他真的从来没有爱过我？
-
 推荐：
 Did he never love me at all?
 
 中文：
 这一世，我绝不会再输。
-
 推荐：
 This time, I won't lose again.
 
 中文：
 原来，我才是那个笑话。
-
 推荐：
 So I was the joke all along.
 
 # 画面文字/标题翻译规则
-
 如果字幕是标题、章节名、画面大字，可以译得更短、更有冲击力。
 
 中文：
 三年后，她强势归来
-
 推荐：
 Three Years Later, She Returns
 
 中文：
 真正的千金回来了
-
 推荐：
 The Real Heiress Is Back
 
 中文：
 他终于后悔了
-
 推荐：
 He Finally Regrets It
 
@@ -593,7 +560,7 @@ She never expected to wake up three years in the past.
 输出：
 2
 00:00:04,200 --> 00:00:07,000
-You have my attention.
+You've got my attention.
 
 ## 示例 3：真假千金
 

@@ -4,6 +4,7 @@ paths:
   background_mp3: input/background.mp3
   outputs_dir: outputs
   asr_srt: outputs/asr/zh_raw.srt
+  asr_words: outputs/asr/zh_raw.words.json
   merged_asr_srt: outputs/merged/zh_asr_merged.srt
   cleaned_srt: outputs/cleaned/zh_cleaned.srt
   corrected_srt: outputs/critic/zh_corrected.srt
@@ -63,9 +64,11 @@ asr:
   max_speakers: 4
   batch_size: 8
   align: true                   # 词级对齐
-  diarize_fallback_to_asr: true # diarization 失败时退回纯 ASR(无 speaker_id)
+  diarize_fallback_to_asr: false # diarization 失败时退回纯 ASR(无 speaker_id)
   whisperx_missing_dep_fallback: false  # whisperx 缺依赖时是否回退 faster_whisper
-  srt_emit_speaker: false       # SRT 文件是否输出 [speaker_1] 前缀
+  srt_emit_speaker: true       # SRT 文件是否输出 [speaker_1] 前缀
+  word_cue_max_duration_ms: 6000  # 词级切短句:单条最大时长(ms)
+  word_cue_max_chars: 30          # 词级切短句:单条最大字数
 
 llm:
   api_key_env: LLM_API_KEY
