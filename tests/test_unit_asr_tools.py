@@ -118,6 +118,10 @@ class WhisperxTranscribeTests(unittest.TestCase):
         def assign_word_speakers(diarize_df, transcript_result, **k):
             for seg in transcript_result["segments"]:
                 seg["speaker"] = "SPEAKER_00"
+                for word in seg.get("words", []) or []:
+                    word["speaker"] = "SPEAKER_00"
+            for word in transcript_result.get("word_segments", []) or []:
+                word["speaker"] = "SPEAKER_00"
             return transcript_result
 
         diarize_mod.DiarizationPipeline = FakePipeline
@@ -126,7 +130,21 @@ class WhisperxTranscribeTests(unittest.TestCase):
         fake.load_model = MagicMock(return_value=MagicMock())
         fake.load_audio = MagicMock(return_value=object())
         fake.load_align_model = MagicMock(return_value=(MagicMock(), {}))
-        fake.align = MagicMock(side_effect=lambda result, *a, **k: result)
+        fake.align = MagicMock(
+            side_effect=lambda segments, *a, **k: {
+                "segments": [
+                    {
+                        **segments[0],
+                        "words": [
+                            {"word": "hello", "start": 0.0, "end": 0.5},
+                        ],
+                    }
+                ],
+                "word_segments": [
+                    {"word": "hello", "start": 0.0, "end": 0.5},
+                ],
+            }
+        )
 
         def transcribe(audio, batch_size=None, language=None):
             return {"segments": [{"start": 0.0, "end": 2.5, "text": "hello"}]}
@@ -154,7 +172,7 @@ class WhisperxTranscribeTests(unittest.TestCase):
                 )
         self.assertEqual(len(cues), 1)
         self.assertNotIn("speaker_id", cues[0])
-        self.assertEqual(words, [])
+        self.assertEqual(words, [{"index": 1, "word": "hello", "start_ms": 0, "end_ms": 500}])
 
     def test_diarize_failure_without_fallback_raises(self) -> None:
         fake = self._install_fake_whisperx(diarize_fail=True)
@@ -180,6 +198,38 @@ class WhisperxTranscribeTests(unittest.TestCase):
                         {"diarize": True, "diarize_fallback_to_asr": True, "hf_token_env": "HF_TOKEN"},
                     )
         self.assertNotIn("speaker_id", cues[0])
+        self.assertEqual(_words, [{"index": 1, "word": "hello", "start_ms": 0, "end_ms": 500}])
+
+    def test_whisperx_align_receives_segments_and_returns_words(self) -> None:
+        fake = self._install_fake_whisperx()
+        with tempfile.TemporaryDirectory() as d:
+            wav = Path(d) / "x.wav"
+            wav.write_bytes(b"")
+            with patch.dict(sys.modules, {"whisperx": fake, "whisperx.diarize": fake.diarize}):
+                with patch("os.getenv", return_value=""):
+                    cues, words = _transcribe_with_whisperx(
+                        wav,
+                        {"align": True, "diarize": False, "language": "zh", "device": "cpu"},
+                    )
+
+        first_arg = fake.align.call_args.args[0]
+        self.assertIsInstance(first_arg, list)
+        self.assertEqual(first_arg[0]["text"], "hello")
+        self.assertEqual(words[0]["word"], "hello")
+        self.assertEqual(cues[0]["text"], "hello")
+
+    def test_whisperx_align_failure_strict_raises(self) -> None:
+        fake = self._install_fake_whisperx()
+        fake.align.side_effect = RuntimeError("align boom")
+        with tempfile.TemporaryDirectory() as d:
+            wav = Path(d) / "x.wav"
+            wav.write_bytes(b"")
+            with patch.dict(sys.modules, {"whisperx": fake, "whisperx.diarize": fake.diarize}):
+                with self.assertRaisesRegex(RuntimeError, "whisperx alignment failed"):
+                    _transcribe_with_whisperx(
+                        wav,
+                        {"align": True, "align_strict": True, "diarize": False},
+                    )
 
     def test_diarize_success_assigns_speaker(self) -> None:
         fake = self._install_fake_whisperx()
@@ -193,6 +243,7 @@ class WhisperxTranscribeTests(unittest.TestCase):
                         {"diarize": True, "diarize_fallback_to_asr": True, "hf_token_env": "HF_TOKEN"},
                     )
         self.assertEqual(cues[0]["speaker_id"], "speaker_1")
+        self.assertEqual(_words[0]["speaker_id"], "speaker_1")
 
 
 class AsrReportTests(unittest.TestCase):

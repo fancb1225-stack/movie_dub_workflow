@@ -7,8 +7,9 @@ from src.config import config_path
 from src.llm_client import LLMClient
 from src.prompt_registry import prompt_for
 from src.state import SrtCue, WorkflowState
+from src.tools.cue_tools import copy_timing_and_speaker
 from src.tools.file_tools import write_json, write_text
-from src.tools.srt_tools import clean_cues, format_srt, make_cue, parse_srt
+from src.tools.srt_tools import clean_cues, format_srt, parse_srt
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,8 @@ def translate_to_english(state: WorkflowState) -> WorkflowState:
     final_srt = format_srt(translated_cues)
     write_text(config_path(config, "paths.translated_srt"), final_srt)
     write_text(config_path(config, "paths.final_srt"), final_srt)
+    write_json(config_path(config, "paths.translated_srt").with_suffix(".cues.json"), translated_cues)
+    write_json(config_path(config, "paths.final_srt").with_suffix(".cues.json"), translated_cues)
     report_path = config_path(config, "paths.reports_dir") / "translation_report.json"
     write_json(
         report_path,
@@ -170,10 +173,7 @@ def _translate_chunk(
         "translate chunk %d exhausted retries (%s); falling back to source text",
         chunk_index + 1, last_error,
     )
-    placeholder = [
-        make_cue(cue["index"], cue["start_ms"], cue["end_ms"], cue["text"])
-        for cue in chunk_cues
-    ]
+    placeholder = [copy_timing_and_speaker(cue, cue["text"]) for cue in chunk_cues]
     return chunk_index, placeholder, True
 
 
@@ -206,7 +206,7 @@ def _fallback_translation(cues: list[SrtCue]) -> list[SrtCue]:
     translated: list[SrtCue] = []
     for cue in cues:
         text = templates[(cue["index"] - 1) % len(templates)]
-        translated.append(make_cue(cue["index"], cue["start_ms"], cue["end_ms"], text))
+        translated.append(copy_timing_and_speaker(cue, text))
     return translated
 
 
@@ -221,7 +221,5 @@ def _parse_translation_or_raise(
         )
     validated: list[SrtCue] = []
     for cue, source in zip(cues, source_cues):
-        validated.append(
-            make_cue(source["index"], source["start_ms"], source["end_ms"], cue["text"])
-        )
+        validated.append(copy_timing_and_speaker(source, cue["text"]))
     return validated

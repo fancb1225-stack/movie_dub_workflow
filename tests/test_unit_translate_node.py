@@ -58,6 +58,7 @@ class TranslateNodeTests(unittest.TestCase):
             # 占位保留源文本，条数对齐
             self.assertEqual(len(result["final_cues"]), 2)
             self.assertEqual(result["final_cues"][0]["text"], "主角进入房间。")
+            self.assertEqual(result["final_cues"][0]["speaker_id"], "speaker_1")
             report = Path(result["reports"]["translation_report"])
             self.assertTrue(report.exists())
 
@@ -190,8 +191,8 @@ class TranslateNodeTests(unittest.TestCase):
 
 def _state(temp_dir: str, allow_mock_fallback: bool) -> dict[str, Any]:
     cues = [
-        make_cue(1, 0, 2000, "主角进入房间。"),
-        make_cue(2, 2000, 4200, "他发现事情不对。"),
+        make_cue(1, 0, 2000, "主角进入房间。", "speaker_1"),
+        make_cue(2, 2000, 4200, "他发现事情不对。", "speaker_2"),
     ]
     root = Path(temp_dir)
     return {

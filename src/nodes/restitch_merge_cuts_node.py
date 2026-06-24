@@ -6,6 +6,7 @@ from src.config import config_path
 from src.llm_client import LLMClient
 from src.prompt_registry import prompt_for
 from src.state import SrtCue, WorkflowState
+from src.tools.cue_tools import inherit_speaker_ids
 from src.tools.file_tools import write_json, write_text
 from src.tools.srt_tools import clean_cues, format_srt, parse_srt, reindex_cues
 
@@ -59,6 +60,7 @@ def restitch_merge_cuts(state: WorkflowState) -> WorkflowState:
     merged_cues = reindex_cues(merged_cues)
     merged_srt = format_srt(merged_cues)
     write_text(config_path(config, "paths.merged_asr_srt"), merged_srt)
+    write_json(config_path(config, "paths.merged_asr_srt").with_suffix(".cues.json"), merged_cues)
     report_path = config_path(config, "paths.reports_dir") / "restitch_merge_cuts_report.json"
     write_json(
         report_path,
@@ -118,6 +120,7 @@ def _restitch_one(
             win_start = window[0]["start_ms"]
             win_end = window[-1]["end_ms"]
             if all(c["start_ms"] >= win_start and c["end_ms"] <= win_end for c in remerged):
+                remerged = inherit_speaker_ids(remerged, window)
                 return cues[:tail_start] + remerged + cues[head_end:], True
             last_error = "remerged cues out of window range"
         except Exception as exc:

@@ -92,8 +92,14 @@ def srt_time_to_ms(value: str) -> int:
     return ((hours * 60 + minutes) * 60 + seconds) * 1000 + millis
 
 
-def make_cue(index: int, start_ms: int, end_ms: int, text: str) -> SrtCue:
-    return {
+def make_cue(
+    index: int,
+    start_ms: int,
+    end_ms: int,
+    text: str,
+    speaker_id: str | None = None,
+) -> SrtCue:
+    cue: SrtCue = {
         "index": index,
         "start": ms_to_srt_time(start_ms),
         "end": ms_to_srt_time(end_ms),
@@ -101,6 +107,9 @@ def make_cue(index: int, start_ms: int, end_ms: int, text: str) -> SrtCue:
         "end_ms": end_ms,
         "text": clean_text(text),
     }
+    if speaker_id:
+        cue["speaker_id"] = speaker_id
+    return cue
 
 
 def reindex_cues(cues: list[SrtCue]) -> list[SrtCue]:

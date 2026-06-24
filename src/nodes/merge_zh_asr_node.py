@@ -7,6 +7,7 @@ from src.config import config_path
 from src.llm_client import LLMClient
 from src.prompt_registry import prompt_for
 from src.state import SrtCue, WorkflowState
+from src.tools.cue_tools import inherit_speaker_ids
 from src.tools.file_tools import write_json, write_text
 from src.tools.merge_tools import split_cues_by_gap
 from src.tools.srt_tools import clean_cues, format_srt, ms_to_srt_time, parse_srt, reindex_cues
@@ -52,9 +53,10 @@ def merge_zh_asr_srt(state: WorkflowState) -> WorkflowState:
         )
         used_fallback = len(failed_chunks) == len(chunks)
 
-    merged_cues = reindex_cues(merged_cues)
+    merged_cues = reindex_cues(inherit_speaker_ids(merged_cues, raw_cues))
     merged_srt = format_srt(merged_cues)
     write_text(config_path(config, "paths.merged_asr_srt"), merged_srt)
+    write_json(config_path(config, "paths.merged_asr_srt").with_suffix(".cues.json"), merged_cues)
     report_path = config_path(config, "paths.reports_dir") / "merge_zh_asr_report.json"
     write_json(
         report_path,
@@ -173,7 +175,7 @@ def _parse_or_fallback(
     for cue in cues:
         error = _validate_merged_cue(cue, fallback_cues, prev_end)
         if error is None:
-            kept.append(cue)
+            kept.append(inherit_speaker_ids([cue], fallback_cues)[0])
             prev_end = cue["end_ms"]
         else:
             # 单条容错:丢弃无效 cue,保留其余 LLM 合并结果,不全量回退

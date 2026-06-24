@@ -81,6 +81,8 @@ def detect_duration_issues(
                 "wpm": wpm,
                 "issue_types": issue_types,
             }
+            if cue.get("speaker_id"):
+                issue["speaker_id"] = cue["speaker_id"]
             if segment["index"] in zh_by_index:
                 issue["zh_text"] = zh_by_index[segment["index"]]
             issues.append(issue)

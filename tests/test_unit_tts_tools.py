@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.tools.tts_tools import _generate_edge_tts
+from src.tools.tts_tools import _generate_edge_tts, generate_tts_segments
 
 
 class TtsToolsTests(unittest.TestCase):
@@ -48,6 +48,35 @@ class TtsToolsTests(unittest.TestCase):
                 )
 
         self.assertEqual(calls[0]["rate"], "+10%")
+    def test_generate_segments_preserves_speaker_and_profile_metadata(self) -> None:
+        cues = [
+            {
+                "index": 1,
+                "start": "00:00:00,000",
+                "end": "00:00:01,000",
+                "start_ms": 0,
+                "end_ms": 1000,
+                "text": "hello",
+                "speaker_id": "speaker_1",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            segments = generate_tts_segments(
+                cues,
+                Path(tmp),
+                {
+                    "tts": {
+                        "provider": "mock",
+                        "speaker_profiles": {"speaker_1": {"voice_id": "voice-a", "speed": 1.2}},
+                        "sample_rate": 24000,
+                    }
+                },
+            )
+
+        self.assertTrue(segments[0]["success"])
+        self.assertEqual(segments[0]["speaker_id"], "speaker_1")
+        self.assertEqual(segments[0]["voice_id"], "voice-a")
+        self.assertEqual(segments[0]["speed"], 1.2)
 
 
 if __name__ == "__main__":

@@ -52,6 +52,13 @@ def transcribe_mp3_to_srt(
     speakers = sorted(
         {cue["speaker_id"] for cue in cues if cue.get("speaker_id")}
     )
+    alignment = {}
+    if provider == "whisperx":
+        alignment = {
+            "enabled": bool(asr_config.get("align", True)),
+            "succeeded": bool(words),
+            "error": None if words else "No word-level timestamps produced.",
+        }
     srt_text = format_srt(cues, include_speaker=bool(asr_config.get("srt_emit_speaker", False)))
     return {
         "provider": provider,
@@ -65,6 +72,7 @@ def transcribe_mp3_to_srt(
         "srt": srt_text,
         "speakers": speakers,
         "diarized": diarized,
+        "alignment": alignment,
     }
 
 
@@ -78,6 +86,7 @@ def write_asr_report(path: str | Path, asr_result: dict[str, Any]) -> str:
         "word_count": asr_result.get("word_count", 0),
         "speakers": asr_result.get("speakers", []),
         "diarized": asr_result.get("diarized", False),
+        "alignment": asr_result.get("alignment", {}),
     }
     return write_json(path, report)
 
@@ -164,12 +173,33 @@ def _transcribe_with_whisperx(
     result = model.transcribe(audio, batch_size=batch_size, language=language)
 
     if asr_config.get("align", True):
+        alignment_succeeded = False
+        alignment_error: str | None = None
         try:
             align_model, align_meta = whisperx.load_align_model(language, device)
-            result = whisperx.align(result, align_model, align_meta, audio, device)
-        except Exception:
-            # 对齐失败不阻断，退回未对齐的 segment 级结果。
-            pass
+            result = _align_whisperx_result(
+                whisperx,
+                result,
+                align_model,
+                align_meta,
+                audio,
+                device,
+                asr_config,
+            )
+            alignment_succeeded = True
+        except Exception as exc:
+            alignment_error = f"{type(exc).__name__}: {exc}"
+            if asr_config.get("align_strict", False):
+                raise RuntimeError(f"whisperx alignment failed: {exc}") from exc
+            logger = __import__("logging").getLogger(__name__)
+            logger.warning("whisperx alignment failed; fallback to segment-level ASR: %s", alignment_error)
+        result["alignment"] = {
+            "enabled": True,
+            "succeeded": alignment_succeeded,
+            "error": alignment_error,
+        }
+    else:
+        result["alignment"] = {"enabled": False, "succeeded": False, "error": None}
 
     if asr_config.get("diarize", True):
         hf_token = os.getenv(str(asr_config.get("hf_token_env", "HF_TOKEN")), "")
@@ -203,6 +233,32 @@ def _transcribe_with_whisperx(
         # 无词级数据(对齐失败或旧格式):回退 segment 级映射
         cues = map_whisperx_result_to_cues(result, speaker_normalize=True)
     return cues, words
+
+
+def _align_whisperx_result(
+    whisperx_module: Any,
+    result: dict[str, Any],
+    align_model: Any,
+    align_meta: dict[str, Any],
+    audio: Any,
+    device: str,
+    asr_config: dict[str, Any],
+) -> dict[str, Any]:
+    """Run whisperx.align with the API shape used by current WhisperX releases."""
+    aligned = whisperx_module.align(
+        result.get("segments", []),
+        align_model,
+        align_meta,
+        audio,
+        device,
+        return_char_alignments=bool(asr_config.get("return_char_alignments", False)),
+    )
+    if not isinstance(aligned, dict):
+        raise RuntimeError(f"whisperx.align returned {type(aligned).__name__}, expected dict")
+    if "segments" not in aligned and "word_segments" not in aligned:
+        raise RuntimeError("whisperx.align returned no segments or word_segments")
+    merged = {**result, **aligned}
+    return merged
 
 
 def _transcribe_with_faster_whisper(

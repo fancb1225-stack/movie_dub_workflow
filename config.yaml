@@ -64,6 +64,7 @@ asr:
   max_speakers: 4
   batch_size: 8
   align: true                   # 词级对齐
+  align_strict: false           # align 失败时是否直接失败; false 时退回 segment 级并记录诊断
   diarize_fallback_to_asr: false # diarization 失败时退回纯 ASR(无 speaker_id)
   whisperx_missing_dep_fallback: false  # whisperx 缺依赖时是否回退 faster_whisper
   srt_emit_speaker: true       # SRT 文件是否输出 [speaker_1] 前缀
@@ -93,12 +94,32 @@ srt:
   merge_max_duration_ms: 6500
 
 tts:
-  provider: edge_tts
-  voice: en-US-AriaNeural
+  provider: minimax
+  voice: ""
   rate: "+40%"
   sample_rate: 24000
   words_per_minute: 155
-  max_retries: 1
+  max_retries: 3
+  pause_before_tts: true
+  speaker_profiles: {}
+  minimax:
+    api_key_env: MINIMAX_API_KEY
+    group_id_env: MINIMAX_GROUP_ID
+    base_url_env: MINIMAX_BASE_URL
+    model_env: MINIMAX_TTS_MODEL
+    base_url: https://api.minimax.chat
+    model: ""
+    default_voice_id: ""
+    create_path: /v1/minimax/tts/async
+    query_path: /v1/minimax/tts/tasks/{task_id}
+    file_path: ""
+    format: mp3
+    timeout: 60
+    task_timeout: 600
+    poll_interval: 1.5
+    bitrate: 128000
+    channel: 2
+    language_boost: auto
 
 duration:
   max_overrun_ms: 350

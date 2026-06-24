@@ -6,7 +6,8 @@ from src.config import config_path
 from src.llm_client import LLMClient
 from src.prompt_registry import prompt_for
 from src.state import SrtCue, WorkflowState
-from src.tools.file_tools import write_text
+from src.tools.cue_tools import inherit_speaker_ids
+from src.tools.file_tools import write_json, write_text
 from src.tools.srt_tools import clean_cues, format_srt, parse_srt
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ def critic_srt(state: WorkflowState) -> WorkflowState:
     corrected_cues = _parse_or_fallback(corrected_srt, cleaned_cues)
     corrected_srt_text = format_srt(corrected_cues)
     write_text(config_path(config, "paths.corrected_srt"), corrected_srt_text)
+    write_json(config_path(config, "paths.corrected_srt").with_suffix(".cues.json"), corrected_cues)
     state["corrected_cues"] = corrected_cues
     state["corrected_srt"] = corrected_srt_text
     return state
@@ -44,4 +46,4 @@ def _parse_or_fallback(srt_text: str, fallback_cues: list[SrtCue]) -> list[SrtCu
     for cue, fallback in zip(cues, fallback_cues):
         if cue["start_ms"] != fallback["start_ms"] or cue["end_ms"] != fallback["end_ms"]:
             return fallback_cues
-    return cues
+    return inherit_speaker_ids(cues, fallback_cues)

@@ -22,6 +22,7 @@ from src.tools.asr_words import cues_from_asr_words_file
 from src.tools.file_tools import ensure_dir, write_json
 from src.tools.srt_tools import parse_srt
 from src.video_types import DEFAULT_VIDEO_TYPE, normalize_video_type
+from src.workflow_pause import WorkflowPauseRequired
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +241,21 @@ class WorkflowService:
             # Clear snapshot on successful completion
             clear_state_snapshot(job["paths"]["job_dir"])
             yield {"event": "done", "report": report}
+        except WorkflowPauseRequired as pause:
+            payload = dict(pause.payload)
+            report = {
+                "job_id": job_id,
+                "status": "paused",
+                "error": str(pause),
+                "hint": "请在前端为每个说话人配置 TTS 音色、语速等参数后恢复工作流。",
+                **payload,
+            }
+            self.jobs.update_job(
+                job_id,
+                status="langgraph_paused",
+                extra={"langgraph_workflow_report": report, "langgraph_progress": report},
+            )
+            yield report
         except Exception as exc:
             report = _failure_report(
                 job_id,
@@ -444,6 +460,7 @@ def _load_raw_asr_state(raw_asr: tuple[Path, str]) -> tuple[str, list]:
         from src.tools.srt_tools import format_srt
 
         raw_cues = cues_from_asr_words_file(path)
+        write_json(path.with_name("zh_raw.cues.json"), raw_cues)
         return format_srt(raw_cues), raw_cues
     raw_srt_text = path.read_text(encoding="utf-8")
     return raw_srt_text, parse_srt(raw_srt_text)
@@ -622,11 +639,16 @@ def _workflow_artifacts(config: dict[str, Any]) -> dict[str, str]:
     paths = config["paths"]
     candidates = {
         "raw_srt": paths["asr_srt"],
+        "raw_cues": str(Path(paths["asr_srt"]).with_suffix(".cues.json")),
         "merged_asr_srt": paths["merged_asr_srt"],
+        "merged_asr_cues": str(Path(paths["merged_asr_srt"]).with_suffix(".cues.json")),
         "cleaned_srt": paths["cleaned_srt"],
         "corrected_srt": paths["corrected_srt"],
+        "corrected_cues": str(Path(paths["corrected_srt"]).with_suffix(".cues.json")),
         "translated_srt": paths["translated_srt"],
+        "translated_cues": str(Path(paths["translated_srt"]).with_suffix(".cues.json")),
         "final_srt": paths["final_srt"],
+        "final_cues": str(Path(paths["final_srt"]).with_suffix(".cues.json")),
         "narration_wav": paths["narration_wav"],
         "narration_mp3": paths["narration_mp3"],
     }

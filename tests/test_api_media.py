@@ -27,6 +27,8 @@ def test_media_api_upload_extract_and_package(tmp_path: Path) -> None:
     config.setdefault("jianying", {})["auto_launch"] = False
     config["llm"]["api_key"] = ""
     config["llm"]["model"] = "mock"
+    config.setdefault("tts", {})["provider"] = "mock"
+    config["tts"]["pause_before_tts"] = False
     ffmpeg = find_binary(config, "ffmpeg.ffmpeg_path", "ffmpeg")
     source_mp4 = tmp_path / "source.mp4"
     _make_test_mp4(ffmpeg, source_mp4)

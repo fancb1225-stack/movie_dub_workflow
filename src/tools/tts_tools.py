@@ -5,6 +5,12 @@ import logging
 import math
 import traceback
 import wave
+import json
+import os
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -30,8 +36,11 @@ def generate_tts_segments(
     for cue in cues:
         segment_path = directory / f"segment_{cue['index']:04d}.mp3"
         try:
+            speaker_profile = _resolve_speaker_profile(cue, tts_config)
             if provider == "edge_tts":
                 _generate_edge_tts(cue["text"], segment_path, tts_config)
+            elif provider == "minimax":
+                _generate_minimax_tts(cue["text"], segment_path, tts_config, speaker_profile)
             else:
                 _generate_mock_audio(cue["text"], segment_path, tts_config)
             if not segment_path.exists():
@@ -41,17 +50,23 @@ def generate_tts_segments(
                 raise RuntimeError(f"TTS output file is empty (0 bytes): {segment_path}")
             duration_ms = get_audio_duration_ms(segment_path, config)
             logger.debug("TTS segment %d OK: size=%d, duration_ms=%d", cue["index"], file_size, duration_ms)
-            segments.append(
-                {
-                    "index": cue["index"],
-                    "text": cue["text"],
-                    "start_ms": cue["start_ms"],
-                    "end_ms": cue["end_ms"],
-                    "path": str(segment_path),
-                    "duration_ms": duration_ms,
-                    "success": True,
-                }
-            )
+            segment: TtsSegment = {
+                "index": cue["index"],
+                "text": cue["text"],
+                "start_ms": cue["start_ms"],
+                "end_ms": cue["end_ms"],
+                "path": str(segment_path),
+                "duration_ms": duration_ms,
+                "success": True,
+                "provider": provider,
+            }
+            if cue.get("speaker_id"):
+                segment["speaker_id"] = cue["speaker_id"]
+            if speaker_profile.get("voice_id"):
+                segment["voice_id"] = str(speaker_profile["voice_id"])
+            if speaker_profile.get("speed") is not None:
+                segment["speed"] = float(speaker_profile["speed"])
+            segments.append(segment)
         except Exception as exc:
             logger.error(
                 "TTS segment %d FAILED: %s\n%s",
@@ -59,21 +74,240 @@ def generate_tts_segments(
                 exc,
                 traceback.format_exc(),
             )
-            segments.append(
-                {
-                    "index": cue["index"],
-                    "text": cue["text"],
-                    "start_ms": cue["start_ms"],
-                    "end_ms": cue["end_ms"],
-                    "path": str(segment_path),
-                    "duration_ms": 0,
-                    "success": False,
-                    "error": str(exc),
-                }
-            )
+            failed_segment: TtsSegment = {
+                "index": cue["index"],
+                "text": cue["text"],
+                "start_ms": cue["start_ms"],
+                "end_ms": cue["end_ms"],
+                "path": str(segment_path),
+                "duration_ms": 0,
+                "success": False,
+                "error": str(exc),
+                "provider": provider,
+            }
+            if cue.get("speaker_id"):
+                failed_segment["speaker_id"] = cue["speaker_id"]
+            segments.append(failed_segment)
     success_count = sum(1 for s in segments if s["success"])
     logger.info("TTS generate done: %d/%d segments succeeded", success_count, len(segments))
     return segments
+
+
+def _resolve_speaker_profile(cue: SrtCue, tts_config: dict[str, Any]) -> dict[str, Any]:
+    speaker_id = cue.get("speaker_id") or "default"
+    profiles = tts_config.get("speaker_profiles", {})
+    profile: dict[str, Any] = {}
+    if isinstance(profiles, dict):
+        raw_profile = profiles.get(speaker_id) or profiles.get("default") or {}
+        if isinstance(raw_profile, dict):
+            profile = dict(raw_profile)
+    if not profile and str(tts_config.get("provider", "")).lower() == "minimax":
+        default_voice = _minimax_config(tts_config).get("default_voice_id") or tts_config.get("voice")
+        if default_voice:
+            profile = {"voice_id": default_voice}
+    if speaker_id != "default":
+        profile.setdefault("speaker_id", speaker_id)
+    if "speed" not in profile:
+        profile["speed"] = _rate_to_speed(tts_config.get("rate", "+0%"))
+    return profile
+
+
+def _rate_to_speed(rate: Any) -> float:
+    if isinstance(rate, (int, float)):
+        return float(rate)
+    text = str(rate or "+0%").strip()
+    if text.endswith("%"):
+        try:
+            return max(0.5, min(3.0, 1 + float(text[:-1]) / 100))
+        except ValueError:
+            return 1.0
+    try:
+        return float(text)
+    except ValueError:
+        return 1.0
+
+
+def _minimax_config(tts_config: dict[str, Any]) -> dict[str, Any]:
+    raw = tts_config.get("minimax", {})
+    return raw if isinstance(raw, dict) else {}
+
+
+def _clean_config_value(value: Any) -> str:
+    text = str(value or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        text = text[1:-1].strip()
+    return text
+
+
+def _join_minimax_url(base_url: str, path: str, group_id: str = "") -> str:
+    if not base_url:
+        raise RuntimeError("TTS provider minimax requires base_url or MINIMAX_BASE_URL.")
+    if path.startswith(("http://", "https://")):
+        url = path
+    elif not path:
+        url = base_url.rstrip("/")
+    else:
+        url = base_url.rstrip("/") + "/" + path.lstrip("/")
+    if group_id:
+        parsed = urllib.parse.urlsplit(url)
+        query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        if not any(key.lower() == "groupid" for key, _ in query):
+            query.append(("GroupId", group_id))
+        url = urllib.parse.urlunsplit(parsed._replace(query=urllib.parse.urlencode(query)))
+    return url
+
+
+def _find_first(data: Any, names: set[str]) -> Any:
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key in names and value not in (None, ""):
+                return value
+        for value in data.values():
+            found = _find_first(value, names)
+            if found not in (None, ""):
+                return found
+    elif isinstance(data, list):
+        for item in data:
+            found = _find_first(item, names)
+            if found not in (None, ""):
+                return found
+    return None
+
+
+def _minimax_request_json(
+    method: str,
+    url: str,
+    api_key: str,
+    payload: dict[str, Any] | None,
+    timeout: float,
+    max_retries: int,
+) -> dict[str, Any]:
+    data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+    last_error: Exception | str | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            request = urllib.request.Request(url, data=data, headers=headers, method=method)
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                body = response.read().decode("utf-8", errors="replace")
+            if not body.strip():
+                return {}
+            parsed = json.loads(body)
+            if not isinstance(parsed, dict):
+                raise RuntimeError(f"MiniMax returned non-object JSON: {body[:300]}")
+            return parsed
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            last_error = f"HTTP {exc.code}: {exc.reason}; response={body[:500]}"
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, RuntimeError) as exc:
+            last_error = exc
+        if attempt < max_retries:
+            time.sleep(1.5 * (attempt + 1))
+    raise RuntimeError(f"MiniMax TTS request failed: {method} {url} -> {last_error}")
+
+
+def _generate_minimax_tts(
+    text: str,
+    output_path: Path,
+    tts_config: dict[str, Any],
+    speaker_profile: dict[str, Any],
+) -> None:
+    minimax = _minimax_config(tts_config)
+    api_key = _clean_config_value(os.getenv(str(minimax.get("api_key_env", "MINIMAX_API_KEY")), ""))
+    base_url = _clean_config_value(os.getenv(str(minimax.get("base_url_env", "MINIMAX_BASE_URL")), "")) or _clean_config_value(minimax.get("base_url", ""))
+    model = _clean_config_value(os.getenv(str(minimax.get("model_env", "MINIMAX_TTS_MODEL")), "")) or _clean_config_value(minimax.get("model", ""))
+    group_id = _clean_config_value(os.getenv(str(minimax.get("group_id_env", "MINIMAX_GROUP_ID")), ""))
+    voice_id = _clean_config_value(speaker_profile.get("voice_id") or minimax.get("default_voice_id") or tts_config.get("voice"))
+    if not api_key:
+        raise RuntimeError("TTS provider minimax requires MINIMAX_API_KEY.")
+    if not model:
+        raise RuntimeError("TTS provider minimax requires model or MINIMAX_TTS_MODEL.")
+    if not voice_id:
+        raise RuntimeError("TTS provider minimax requires voice_id for speaker profile.")
+
+    audio_format = str(minimax.get("format", output_path.suffix.lstrip(".") or "mp3"))
+    create_path = str(minimax.get("create_path", "/v1/minimax/tts/async"))
+    query_path = str(minimax.get("query_path", "/v1/minimax/tts/tasks/{task_id}"))
+    file_path = str(minimax.get("file_path", ""))
+    timeout = float(minimax.get("timeout", 60))
+    poll_interval = float(minimax.get("poll_interval", 1.5))
+    task_timeout = float(minimax.get("task_timeout", 600))
+    max_retries = int(tts_config.get("max_retries", minimax.get("max_retries", 2)))
+    channel = int(minimax.get("channel", 2))
+    bitrate = int(minimax.get("bitrate", 128000))
+    sample_rate = int(tts_config.get("sample_rate", minimax.get("sample_rate", 24000)))
+
+    payload = {
+        "model": model,
+        "text": text,
+        "voice_setting": {
+            "voice_id": voice_id,
+            "speed": float(speaker_profile.get("speed", 1.0)),
+            "vol": float(speaker_profile.get("volume", speaker_profile.get("vol", 1.0))),
+            "pitch": float(speaker_profile.get("pitch", 0.0)),
+        },
+        "audio_setting": {
+            "audio_sample_rate": sample_rate,
+            "bitrate": bitrate,
+            "format": audio_format,
+            "channel": channel,
+        },
+        "language_boost": str(speaker_profile.get("language_boost", minimax.get("language_boost", "auto"))),
+    }
+    create_result = _minimax_request_json(
+        "POST",
+        _join_minimax_url(base_url, create_path, group_id),
+        api_key,
+        payload,
+        timeout,
+        max_retries,
+    )
+    task_id = _find_first(create_result, {"task_id", "taskId", "id"})
+    if not task_id:
+        raise RuntimeError("MiniMax TTS create task returned no task_id.")
+    deadline = time.monotonic() + task_timeout
+    task_result: dict[str, Any] = {}
+    while time.monotonic() <= deadline:
+        task_result = _minimax_request_json(
+            "GET",
+            _join_minimax_url(base_url, query_path.format(task_id=urllib.parse.quote(str(task_id), safe="")), group_id),
+            api_key,
+            None,
+            timeout,
+            max_retries,
+        )
+        status = str(_find_first(task_result, {"status", "task_status", "taskStatus", "state"}) or "").upper()
+        if status in {"SUCCESS", "SUCCEEDED", "COMPLETED", "DONE"}:
+            break
+        if status in {"FAILURE", "FAILED", "ERROR", "CANCELLED", "CANCELED"}:
+            raise RuntimeError(f"MiniMax TTS task failed: task_id={task_id}, status={status}")
+        time.sleep(max(0.5, poll_interval))
+    else:
+        raise RuntimeError(f"MiniMax TTS task timeout: task_id={task_id}")
+
+    download_url = _find_first(task_result, {"result_url", "audio_url", "download_url", "file_url", "url", "output_url"})
+    if not download_url and file_path:
+        file_id = _find_first(task_result, {"file_id", "fileId"})
+        if file_id:
+            file_result = _minimax_request_json(
+                "GET",
+                _join_minimax_url(base_url, file_path.format(file_id=urllib.parse.quote(str(file_id), safe="")), group_id),
+                api_key,
+                None,
+                timeout,
+                max_retries,
+            )
+            download_url = _find_first(file_result, {"result_url", "audio_url", "download_url", "file_url", "url"})
+    if not download_url:
+        raise RuntimeError("MiniMax TTS task succeeded but returned no download url.")
+    request = urllib.request.Request(str(download_url), headers={"Authorization": f"Bearer {api_key}"}, method="GET")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    part_path = output_path.with_name(f"{output_path.name}.part")
+    with urllib.request.urlopen(request, timeout=max(timeout, 180)) as response:
+        part_path.write_bytes(response.read())
+    part_path.replace(output_path)
 
 
 def _generate_edge_tts(

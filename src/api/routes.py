@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from src.api.schemas import (
@@ -190,9 +190,10 @@ def stream_langgraph_workflow(
     llm_timeout: int | None = Query(None),
     llm_max_retries: int | None = Query(None),
     tts_rate: float | None = Query(None),
+    body: dict[str, Any] | None = Body(None),
     config: dict[str, Any] = Depends(get_config),
 ) -> StreamingResponse:
-    overrides = _build_workflow_overrides(max_reflection_rounds, llm_timeout, llm_max_retries, tts_rate)
+    overrides = _build_workflow_overrides(max_reflection_rounds, llm_timeout, llm_max_retries, tts_rate, body)
     def event_stream():
         try:
             for event in WorkflowService(config).run_job_langgraph_workflow_streaming(job_id, overrides=overrides):
@@ -215,9 +216,10 @@ def resume_langgraph_workflow_stream(
     llm_timeout: int | None = Query(None),
     llm_max_retries: int | None = Query(None),
     tts_rate: float | None = Query(None),
+    body: dict[str, Any] | None = Body(None),
     config: dict[str, Any] = Depends(get_config),
 ) -> StreamingResponse:
-    overrides = _build_workflow_overrides(max_reflection_rounds, llm_timeout, llm_max_retries, tts_rate)
+    overrides = _build_workflow_overrides(max_reflection_rounds, llm_timeout, llm_max_retries, tts_rate, body)
     def event_stream():
         try:
             for event in WorkflowService(config).resume_job_langgraph_workflow_streaming(job_id, overrides=overrides):
@@ -281,6 +283,7 @@ def _build_workflow_overrides(
     llm_timeout: int | None,
     llm_max_retries: int | None,
     tts_rate: float | None,
+    body: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     overrides: dict[str, Any] = {}
     if max_reflection_rounds is not None:
@@ -296,4 +299,15 @@ def _build_workflow_overrides(
             overrides["tts.rate"] = f"+{pct}%" if pct >= 0 else f"{pct}%"
         else:
             overrides["tts.rate"] = tts_rate
+    if body:
+        tts_body = body.get("tts", body)
+        if isinstance(tts_body, dict):
+            provider = tts_body.get("provider") or body.get("tts_provider")
+            if provider:
+                overrides["tts.provider"] = provider
+            if "speaker_profiles" in tts_body:
+                overrides["tts.speaker_profiles"] = tts_body["speaker_profiles"]
+                overrides["tts.profiles_confirmed"] = True
+            if "profiles_confirmed" in tts_body:
+                overrides["tts.profiles_confirmed"] = bool(tts_body["profiles_confirmed"])
     return overrides

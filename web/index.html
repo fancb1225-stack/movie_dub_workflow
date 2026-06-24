@@ -785,6 +785,14 @@
             <label for="settingTtsRate">TTS 语速</label>
             <input id="settingTtsRate" type="number" min="0.5" max="3.0" step="0.1" value="1.3">
           </div>
+          <div class="setting-row">
+            <label for="settingTtsProvider">TTS Provider</label>
+            <input id="settingTtsProvider" type="text" value="minimax" placeholder="minimax / mock / edge_tts">
+          </div>
+          <div class="setting-row">
+            <label for="settingSpeakerProfiles">说话人 TTS 配置(JSON)</label>
+            <textarea id="settingSpeakerProfiles" rows="8" placeholder='{"speaker_1":{"voice_id":"...","speed":1.0,"volume":1.0}}'></textarea>
+          </div>
           <div class="setting-actions">
             <button id="settingsCancelBtn" type="button">取消</button>
             <button id="settingsConfirmBtn" class="primary" type="button">确认运行</button>
@@ -840,6 +848,8 @@
       settingLlmTimeout: document.getElementById('settingLlmTimeout'),
       settingLlmMaxRetries: document.getElementById('settingLlmMaxRetries'),
       settingTtsRate: document.getElementById('settingTtsRate'),
+      settingTtsProvider: document.getElementById('settingTtsProvider'),
+      settingSpeakerProfiles: document.getElementById('settingSpeakerProfiles'),
       steps: {
         upload: document.getElementById('stepUpload'),
         probe: document.getElementById('stepProbe'),
@@ -1264,7 +1274,15 @@
         params.set('llm_timeout', overrides.llm_timeout);
         params.set('llm_max_retries', overrides.llm_max_retries);
         params.set('tts_rate', overrides.tts_rate);
-        const response = await fetch(`${apiBase()}/api/jobs/${state.job.job_id}/workflow/langgraph/resume/stream?${params.toString()}`, { method: 'POST' });
+        const response = await fetch(`${apiBase()}/api/jobs/${state.job.job_id}/workflow/langgraph/resume/stream?${params.toString()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tts_provider: overrides.tts_provider,
+            speaker_profiles: overrides.speaker_profiles,
+            profiles_confirmed: true,
+          }),
+        });
         if (!response.ok || !response.body) {
           throw new Error(response.statusText || '无法建立工作流恢复流。');
         }
@@ -1306,7 +1324,15 @@
         params.set('llm_timeout', overrides.llm_timeout);
         params.set('llm_max_retries', overrides.llm_max_retries);
         params.set('tts_rate', overrides.tts_rate);
-        const response = await fetch(`${apiBase()}/api/jobs/${state.job.job_id}/workflow/langgraph/stream?${params.toString()}`, { method: 'POST' });
+        const response = await fetch(`${apiBase()}/api/jobs/${state.job.job_id}/workflow/langgraph/stream?${params.toString()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tts_provider: overrides.tts_provider,
+            speaker_profiles: overrides.speaker_profiles,
+            profiles_confirmed: true,
+          }),
+        });
         if (!response.ok || !response.body) {
           throw new Error(response.statusText || '无法建立工作流进度流。');
         }
@@ -1357,6 +1383,20 @@
         setMessage('翻译与配音工作流完成。', 'ok');
         refreshJob(false).catch(() => {});
         refreshFiles(false).catch(() => {});
+        return;
+      }
+      if (event.event === 'pause') {
+        setStep('langgraph', '等待 TTS 配置');
+        setMessage(event.hint || event.error || '请补充说话人 TTS 配置后恢复工作流。', 'error');
+        if (Array.isArray(event.speakers) && els.settingSpeakerProfiles && !els.settingSpeakerProfiles.value.trim()) {
+          const draft = {};
+          for (const speaker of event.speakers) {
+            draft[speaker] = { voice_id: '', speed: parseFloat(els.settingTtsRate.value) || 1.0, volume: 1.0 };
+          }
+          els.settingSpeakerProfiles.value = JSON.stringify(draft, null, 2);
+        }
+        setOutput(event);
+        refreshJob(false).catch(() => {});
         return;
       }
       if (event.event === 'error') {
@@ -1414,11 +1454,18 @@
     }
 
     function getWorkflowOverrides() {
+      let speakerProfiles = {};
+      const rawProfiles = (els.settingSpeakerProfiles.value || '').trim();
+      if (rawProfiles) {
+        speakerProfiles = JSON.parse(rawProfiles);
+      }
       return {
         max_reflection_rounds: parseInt(els.settingMaxReflectionRounds.value, 10) || 0,
         llm_timeout: parseInt(els.settingLlmTimeout.value, 10) || 600,
         llm_max_retries: parseInt(els.settingLlmMaxRetries.value, 10) || 0,
         tts_rate: parseFloat(els.settingTtsRate.value) || 1.3,
+        tts_provider: (els.settingTtsProvider.value || 'minimax').trim(),
+        speaker_profiles: speakerProfiles,
       };
     }
 

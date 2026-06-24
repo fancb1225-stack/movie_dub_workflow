@@ -67,6 +67,7 @@ class MergeZhAsrNodeTests(unittest.TestCase):
             # cue1(合法)保留;cue2(无效)被丢弃,不全量回退到 3 条源 cue
             self.assertEqual(len(result), 1)
             self.assertEqual(result[0]["text"], "这个男人 被逼相亲")
+            self.assertEqual(result[0]["speaker_id"], "speaker_1")
             self.assertTrue(error)
             self.assertIn("Dropped", (error or ""))
 
@@ -110,9 +111,9 @@ class MergeZhAsrNodeTests(unittest.TestCase):
 def _state(temp_dir: str) -> dict:
     root = Path(temp_dir)
     cues = [
-        make_cue(1, 0, 1000, "这个男人"),
-        make_cue(2, 1000, 2000, "被逼相亲"),
-        make_cue(3, 2000, 3000, "态度还挺无所谓"),
+        make_cue(1, 0, 1000, "这个男人", "speaker_1"),
+        make_cue(2, 1000, 2000, "被逼相亲", "speaker_1"),
+        make_cue(3, 2000, 3000, "态度还挺无所谓", "speaker_2"),
     ]
     return {
         "config": {

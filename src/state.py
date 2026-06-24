@@ -31,6 +31,9 @@ class TtsSegment(TypedDict, total=False):
     success: bool
     error: str
     speaker_id: str
+    provider: str
+    voice_id: str
+    speed: float
 
 
 class DurationIssue(TypedDict, total=False):
@@ -46,6 +49,7 @@ class DurationIssue(TypedDict, total=False):
     zh_text: str
     word_count: int
     wpm: int
+    speaker_id: str
     issue_types: list[str]
 
 
