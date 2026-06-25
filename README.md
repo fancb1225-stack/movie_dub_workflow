@@ -27,6 +27,28 @@ Fallback:
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
+## Docker
+
+Build the API image:
+
+```powershell
+docker build -t movie-dub-workflow .
+```
+
+Run the FastAPI media console:
+
+```powershell
+docker run --rm -p 8000:8000 --env-file .env -v ${PWD}/outputs:/app/outputs movie-dub-workflow
+```
+
+Open:
+
+```text
+http://127.0.0.1:8000/
+```
+
+For GPU ASR/TTS workloads, install a CUDA-enabled PyTorch/WhisperX stack in a derived image and run Docker with the NVIDIA runtime.
+
 ## Existing LangGraph CLI
 
 Run:
