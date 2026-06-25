@@ -12,6 +12,8 @@ htmlcov/
 .venv/
 venv/
 env/
+web/node_modules/
+web/dist/
 
 # Local environment and secrets
 .env

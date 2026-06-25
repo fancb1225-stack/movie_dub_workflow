@@ -6,6 +6,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+web/node_modules/
 
 # Local virtualenvs
 .venv/

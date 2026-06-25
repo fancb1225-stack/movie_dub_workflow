@@ -7,14 +7,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# ffmpeg/ffprobe 用于音频提取、时长检测、音频封装；
-# git/libsndfile/libgomp 等覆盖 demucs/torch/torchaudio/whisperx 常见运行依赖。
+# ffmpeg/ffprobe support media processing; git/libsndfile/libgomp support common
+# demucs, torch, torchaudio, and whisperx runtime dependencies. Node builds the
+# Vue console during image creation.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ffmpeg \
         git \
         libgomp1 \
         libsndfile1 \
+        nodejs \
+        npm \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -22,9 +25,14 @@ COPY requirements.txt ./
 RUN python -m pip install --upgrade pip \
     && python -m pip install -r requirements.txt
 
-COPY . .
+COPY web/package*.json ./web/
+RUN cd web \
+    && npm ci
 
-# 容器内使用系统 ffmpeg/ffprobe；outputs/jobs 作为推荐挂载目录。
+COPY . .
+RUN cd web \
+    && npm run build
+
 ENV HOST=0.0.0.0 \
     PORT=8000
 
