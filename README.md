@@ -29,6 +29,12 @@ Fallback:
 
 ## Docker
 
+Start the FastAPI media console with Docker Compose:
+
+```powershell
+docker compose up --build
+```
+
 Build the API image:
 
 ```powershell
