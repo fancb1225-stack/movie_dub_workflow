@@ -790,8 +790,16 @@
             <input id="settingTtsProvider" type="text" value="minimax" placeholder="minimax / mock / edge_tts">
           </div>
           <div class="setting-row">
+            <label for="settingDefaultVoiceId">默认英文音色</label>
+            <select id="settingDefaultVoiceId"></select>
+          </div>
+          <div class="setting-row">
+            <label>说话人音色选择</label>
+            <div id="settingSpeakerProfileRows" class="speaker-profile-rows"></div>
+          </div>
+          <div class="setting-row">
             <label for="settingSpeakerProfiles">说话人 TTS 配置(JSON)</label>
-            <textarea id="settingSpeakerProfiles" rows="8" placeholder='{"speaker_1":{"voice_id":"...","speed":1.0,"volume":1.0}}'></textarea>
+            <textarea id="settingSpeakerProfiles" rows="8" placeholder='{"speaker_1":{"voice_id":"English_Diligent_Man","speed":1.0,"volume":1.0}}'></textarea>
           </div>
           <div class="setting-actions">
             <button id="settingsCancelBtn" type="button">取消</button>
@@ -849,6 +857,8 @@
       settingLlmMaxRetries: document.getElementById('settingLlmMaxRetries'),
       settingTtsRate: document.getElementById('settingTtsRate'),
       settingTtsProvider: document.getElementById('settingTtsProvider'),
+      settingDefaultVoiceId: document.getElementById('settingDefaultVoiceId'),
+      settingSpeakerProfileRows: document.getElementById('settingSpeakerProfileRows'),
       settingSpeakerProfiles: document.getElementById('settingSpeakerProfiles'),
       steps: {
         upload: document.getElementById('stepUpload'),
@@ -858,7 +868,93 @@
       }
     };
 
-    els.apiBase.value = window.location.origin || 'http://127.0.0.1:8000';
+    const ENGLISH_TTS_VOICES = [
+      ['Santa_Claus', 'Santa Claus'],
+      ['Grinch', 'Grinch'],
+      ['Rudolph', 'Rudolph'],
+      ['Arnold', 'Arnold'],
+      ['Charming_Santa', 'Charming Santa'],
+      ['Charming_Lady', 'Charming Lady'],
+      ['Sweet_Girl', 'Sweet Girl'],
+      ['Cute_Elf', 'Cute Elf'],
+      ['Attractive_Girl', 'Attractive Girl'],
+      ['Serene_Woman', 'Serene Woman'],
+      ['English_Trustworthy_Man', 'Trustworthy Man'],
+      ['English_Graceful_Lady', 'Graceful Lady'],
+      ['English_Aussie_Bloke', 'Aussie Bloke'],
+      ['English_Whispering_girl', 'Whispering girl'],
+      ['English_Diligent_Man', 'Diligent Man'],
+      ['English_Gentle-voiced_man', 'Gentle-voiced man'],
+      ['audiobook_male_1', 'Audiobook Male 1'],
+    ];
+
+    function voiceOptionsHtml(selected = '') {
+      return ENGLISH_TTS_VOICES.map(([id, name]) =>
+        `<option value="${escapeHtml(id)}" ${id === selected ? 'selected' : ''}>${escapeHtml(id)} · ${escapeHtml(name)}</option>`
+      ).join('');
+    }
+
+    function initVoiceSelectors() {
+      if (!els.settingDefaultVoiceId) return;
+      els.settingDefaultVoiceId.innerHTML = voiceOptionsHtml('English_Diligent_Man');
+      els.settingDefaultVoiceId.addEventListener('change', () => {
+        const rows = els.settingSpeakerProfileRows?.querySelectorAll('.speaker-profile-row select') || [];
+        rows.forEach((select) => { select.value = els.settingDefaultVoiceId.value; });
+        syncSpeakerProfilesFromRows();
+      });
+    }
+
+    function renderSpeakerProfileRows(speakers = []) {
+      if (!els.settingSpeakerProfileRows) return;
+      const uniqueSpeakers = Array.from(new Set((speakers || []).filter(Boolean))).sort();
+      if (!uniqueSpeakers.length) {
+        uniqueSpeakers.push('default');
+      }
+      let existing = {};
+      try {
+        existing = JSON.parse((els.settingSpeakerProfiles.value || '{}').trim() || '{}');
+      } catch (_) {
+        existing = {};
+      }
+      const defaultVoice = els.settingDefaultVoiceId?.value || 'English_Diligent_Man';
+      const defaultSpeed = parseFloat(els.settingTtsRate.value) || 1.0;
+      els.settingSpeakerProfileRows.innerHTML = uniqueSpeakers.map((speaker) => {
+        const profile = existing[speaker] || {};
+        const voiceId = profile.voice_id || defaultVoice;
+        const speed = profile.speed || defaultSpeed;
+        const volume = profile.volume || profile.vol || 1.0;
+        return `
+          <div class="speaker-profile-row" data-speaker="${escapeHtml(speaker)}" style="display:grid;grid-template-columns:120px 1fr 90px 90px;gap:8px;align-items:center;margin-bottom:8px;">
+            <strong>${escapeHtml(speaker)}</strong>
+            <select class="speaker-voice">${voiceOptionsHtml(voiceId)}</select>
+            <input class="speaker-speed" type="number" min="0.5" max="3.0" step="0.1" value="${escapeHtml(String(speed))}" title="语速">
+            <input class="speaker-volume" type="number" min="0" max="10" step="0.1" value="${escapeHtml(String(volume))}" title="音量">
+          </div>
+        `;
+      }).join('');
+      els.settingSpeakerProfileRows.querySelectorAll('select,input').forEach((input) => {
+        input.addEventListener('change', syncSpeakerProfilesFromRows);
+        input.addEventListener('input', syncSpeakerProfilesFromRows);
+      });
+      syncSpeakerProfilesFromRows();
+    }
+
+    function syncSpeakerProfilesFromRows() {
+      if (!els.settingSpeakerProfileRows || !els.settingSpeakerProfiles) return;
+      const rows = Array.from(els.settingSpeakerProfileRows.querySelectorAll('.speaker-profile-row'));
+      if (!rows.length) return;
+      const profiles = {};
+      for (const row of rows) {
+        const speaker = row.dataset.speaker;
+        if (!speaker) continue;
+        profiles[speaker] = {
+          voice_id: row.querySelector('.speaker-voice')?.value || els.settingDefaultVoiceId?.value || 'English_Diligent_Man',
+          speed: parseFloat(row.querySelector('.speaker-speed')?.value) || parseFloat(els.settingTtsRate.value) || 1.0,
+          volume: parseFloat(row.querySelector('.speaker-volume')?.value) || 1.0,
+        };
+      }
+      els.settingSpeakerProfiles.value = JSON.stringify(profiles, null, 2);
+    }
 
     function apiBase() {
       return els.apiBase.value.replace(/\/+$/, '');
@@ -1388,12 +1484,8 @@
       if (event.event === 'pause') {
         setStep('langgraph', '等待 TTS 配置');
         setMessage(event.hint || event.error || '请补充说话人 TTS 配置后恢复工作流。', 'error');
-        if (Array.isArray(event.speakers) && els.settingSpeakerProfiles && !els.settingSpeakerProfiles.value.trim()) {
-          const draft = {};
-          for (const speaker of event.speakers) {
-            draft[speaker] = { voice_id: '', speed: parseFloat(els.settingTtsRate.value) || 1.0, volume: 1.0 };
-          }
-          els.settingSpeakerProfiles.value = JSON.stringify(draft, null, 2);
+        if (Array.isArray(event.speakers)) {
+          renderSpeakerProfileRows(event.speakers);
         }
         setOutput(event);
         refreshJob(false).catch(() => {});
@@ -1443,9 +1535,61 @@
       });
     }
 
+    async function getAsrSpeakersForCurrentJob() {
+      if (!state.job) return [];
+      const candidates = [
+        state.job?.asr_result?.speakers,
+        state.job?.extra?.asr_result?.speakers,
+      ];
+      for (const value of candidates) {
+        if (Array.isArray(value) && value.length) return value;
+      }
+
+      let files = [];
+      try {
+        const fileData = await requestJson(`/api/jobs/${state.job.job_id}/files`);
+        files = fileData.files || [];
+      } catch (_) {
+        return [];
+      }
+      const relativePaths = new Set(files.map((file) => file.relative_path));
+      const jsonCandidates = [
+        'workflow/asr/zh_raw.words.json',
+        'workflow/asr/zh_raw.cues.json',
+        'workflow/merged/zh_asr_merged.cues.json',
+        'workflow/final/en_final.cues.json',
+      ].filter((path) => relativePaths.has(path));
+
+      for (const relativePath of jsonCandidates) {
+        try {
+          const data = await requestJson(`/api/jobs/${state.job.job_id}/files/download?path=${encodeURIComponent(relativePath)}`);
+          if (Array.isArray(data)) {
+            const speakers = Array.from(new Set(data.map((item) => item && item.speaker_id).filter(Boolean))).sort();
+            if (speakers.length) return speakers;
+          }
+        } catch (_) {
+          // 兼容旧 job 或中间产物缺失；继续尝试下一个候选。
+        }
+      }
+      return [];
+    }
+
+    async function prepareSpeakerVoiceSettings() {
+      const speakers = await getAsrSpeakersForCurrentJob();
+      renderSpeakerProfileRows(speakers.length ? speakers : ['default']);
+      if (speakers.length) {
+        setMessage(`识别到 ${speakers.length} 个说话人，请为每个说话人选择英文音色。`);
+      } else if (state.job?.status && !['preprocessed', 'langgraph_running', 'langgraph_paused', 'langgraph_failed', 'langgraph_completed'].includes(state.job.status)) {
+        setMessage('当前任务尚未完成 ASR 预处理，请先点击“预处理”。', 'error');
+      } else {
+        setMessage('未读取到 ASR 说话人列表；可能是旧 job 或非 diarization ASR，将使用 default 音色配置。');
+      }
+    }
+
     // ---- Modal: 工作流参数设置 ----
-    function openWorkflowSettingsModal(isResume = false) {
+    async function openWorkflowSettingsModal(isResume = false) {
       state._isResume = isResume;
+      await prepareSpeakerVoiceSettings();
       els.workflowSettingsModal.classList.add('active');
     }
 
@@ -1454,6 +1598,7 @@
     }
 
     function getWorkflowOverrides() {
+      syncSpeakerProfilesFromRows();
       let speakerProfiles = {};
       const rawProfiles = (els.settingSpeakerProfiles.value || '').trim();
       if (rawProfiles) {
@@ -1484,12 +1629,12 @@
     });
 
     els.langgraphBtn.addEventListener('click', () => {
-      openWorkflowSettingsModal(false);
+      openWorkflowSettingsModal(false).catch((error) => setMessage(error.message, 'error'));
     });
 
     // 恢复工作流按钮
     els.resumeBtn.addEventListener('click', () => {
-      openWorkflowSettingsModal(true);
+      openWorkflowSettingsModal(true).catch((error) => setMessage(error.message, 'error'));
     });
 
     // 下载产物按钮
@@ -1506,6 +1651,9 @@
     els.jobListModal.addEventListener('click', (e) => {
       if (e.target === els.jobListModal) closeJobListModal();
     });
+
+    initVoiceSelectors();
+    renderSpeakerProfileRows(['default']);
 
     els.refreshBtn.addEventListener('click', () => refreshJob(true).catch((error) => {
       setMessage(error.message, 'error');
