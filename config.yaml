@@ -100,14 +100,15 @@ tts:
   sample_rate: 24000
   words_per_minute: 155
   max_retries: 3
+  concurrency: 25
   pause_before_tts: true
   speaker_profiles: {}
   minimax:
-    api_key_env: MINIMAX_API_KEY
+    api_key_env: LLM_API_KEY
     group_id_env: MINIMAX_GROUP_ID
-    base_url_env: MINIMAX_BASE_URL
-    model_env: MINIMAX_TTS_MODEL
-    base_url: https://api.minimax.chat
+    base_url_env: ""
+    model_env: TTS_MODEL
+    base_url: https://token.cxtfun.com
     model: ""
     default_voice_id: ""
     create_path: /v1/minimax/tts/async

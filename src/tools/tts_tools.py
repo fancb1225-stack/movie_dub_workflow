@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -33,64 +34,85 @@ def generate_tts_segments(
     logger.info("TTS generate: provider=%s, cues=%d, output_dir=%s", provider, len(cues), directory)
     logger.debug("TTS config: %s", tts_config)
     segments: list[TtsSegment] = []
-    for cue in cues:
-        segment_path = directory / f"segment_{cue['index']:04d}.mp3"
-        try:
-            speaker_profile = _resolve_speaker_profile(cue, tts_config)
-            if provider == "edge_tts":
-                _generate_edge_tts(cue["text"], segment_path, tts_config)
-            elif provider == "minimax":
-                _generate_minimax_tts(cue["text"], segment_path, tts_config, speaker_profile)
-            else:
-                _generate_mock_audio(cue["text"], segment_path, tts_config)
-            if not segment_path.exists():
-                raise FileNotFoundError(f"TTS output file was not created: {segment_path}")
-            file_size = segment_path.stat().st_size
-            if file_size == 0:
-                raise RuntimeError(f"TTS output file is empty (0 bytes): {segment_path}")
-            duration_ms = get_audio_duration_ms(segment_path, config)
-            logger.debug("TTS segment %d OK: size=%d, duration_ms=%d", cue["index"], file_size, duration_ms)
-            segment: TtsSegment = {
-                "index": cue["index"],
-                "text": cue["text"],
-                "start_ms": cue["start_ms"],
-                "end_ms": cue["end_ms"],
-                "path": str(segment_path),
-                "duration_ms": duration_ms,
-                "success": True,
-                "provider": provider,
+    max_workers = max(1, int(tts_config.get("concurrency", 25 if provider == "minimax" else 1)))
+    if max_workers <= 1 or len(cues) <= 1:
+        segments = [_generate_one_tts_segment(cue, directory, config, tts_config, provider) for cue in cues]
+    else:
+        results: dict[int, TtsSegment] = {}
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(cues))) as executor:
+            futures = {
+                executor.submit(_generate_one_tts_segment, cue, directory, config, tts_config, provider): idx
+                for idx, cue in enumerate(cues)
             }
-            if cue.get("speaker_id"):
-                segment["speaker_id"] = cue["speaker_id"]
-            if speaker_profile.get("voice_id"):
-                segment["voice_id"] = str(speaker_profile["voice_id"])
-            if speaker_profile.get("speed") is not None:
-                segment["speed"] = float(speaker_profile["speed"])
-            segments.append(segment)
-        except Exception as exc:
-            logger.error(
-                "TTS segment %d FAILED: %s\n%s",
-                cue["index"],
-                exc,
-                traceback.format_exc(),
-            )
-            failed_segment: TtsSegment = {
-                "index": cue["index"],
-                "text": cue["text"],
-                "start_ms": cue["start_ms"],
-                "end_ms": cue["end_ms"],
-                "path": str(segment_path),
-                "duration_ms": 0,
-                "success": False,
-                "error": str(exc),
-                "provider": provider,
-            }
-            if cue.get("speaker_id"):
-                failed_segment["speaker_id"] = cue["speaker_id"]
-            segments.append(failed_segment)
+            for future in as_completed(futures):
+                results[futures[future]] = future.result()
+        segments = [results[idx] for idx in range(len(cues))]
     success_count = sum(1 for s in segments if s["success"])
     logger.info("TTS generate done: %d/%d segments succeeded", success_count, len(segments))
     return segments
+
+
+def _generate_one_tts_segment(
+    cue: SrtCue,
+    directory: Path,
+    config: dict[str, Any],
+    tts_config: dict[str, Any],
+    provider: str,
+) -> TtsSegment:
+    segment_path = directory / f"segment_{cue['index']:04d}.mp3"
+    try:
+        speaker_profile = _resolve_speaker_profile(cue, tts_config)
+        if provider == "edge_tts":
+            _generate_edge_tts(cue["text"], segment_path, tts_config)
+        elif provider == "minimax":
+            _generate_minimax_tts(cue["text"], segment_path, tts_config, speaker_profile)
+        else:
+            _generate_mock_audio(cue["text"], segment_path, tts_config)
+        if not segment_path.exists():
+            raise FileNotFoundError(f"TTS output file was not created: {segment_path}")
+        file_size = segment_path.stat().st_size
+        if file_size == 0:
+            raise RuntimeError(f"TTS output file is empty (0 bytes): {segment_path}")
+        duration_ms = get_audio_duration_ms(segment_path, config)
+        logger.debug("TTS segment %d OK: size=%d, duration_ms=%d", cue["index"], file_size, duration_ms)
+        segment: TtsSegment = {
+            "index": cue["index"],
+            "text": cue["text"],
+            "start_ms": cue["start_ms"],
+            "end_ms": cue["end_ms"],
+            "path": str(segment_path),
+            "duration_ms": duration_ms,
+            "success": True,
+            "provider": provider,
+        }
+        if cue.get("speaker_id"):
+            segment["speaker_id"] = cue["speaker_id"]
+        if speaker_profile.get("voice_id"):
+            segment["voice_id"] = str(speaker_profile["voice_id"])
+        if speaker_profile.get("speed") is not None:
+            segment["speed"] = float(speaker_profile["speed"])
+        return segment
+    except Exception as exc:
+        logger.error(
+            "TTS segment %d FAILED: %s\n%s",
+            cue["index"],
+            exc,
+            traceback.format_exc(),
+        )
+        failed_segment: TtsSegment = {
+            "index": cue["index"],
+            "text": cue["text"],
+            "start_ms": cue["start_ms"],
+            "end_ms": cue["end_ms"],
+            "path": str(segment_path),
+            "duration_ms": 0,
+            "success": False,
+            "error": str(exc),
+            "provider": provider,
+        }
+        if cue.get("speaker_id"):
+            failed_segment["speaker_id"] = cue["speaker_id"]
+        return failed_segment
 
 
 def _resolve_speaker_profile(cue: SrtCue, tts_config: dict[str, Any]) -> dict[str, Any]:
@@ -215,15 +237,15 @@ def _generate_minimax_tts(
     speaker_profile: dict[str, Any],
 ) -> None:
     minimax = _minimax_config(tts_config)
-    api_key = _clean_config_value(os.getenv(str(minimax.get("api_key_env", "MINIMAX_API_KEY")), ""))
-    base_url = _clean_config_value(os.getenv(str(minimax.get("base_url_env", "MINIMAX_BASE_URL")), "")) or _clean_config_value(minimax.get("base_url", ""))
-    model = _clean_config_value(os.getenv(str(minimax.get("model_env", "MINIMAX_TTS_MODEL")), "")) or _clean_config_value(minimax.get("model", ""))
+    api_key = _clean_config_value(os.getenv(str(minimax.get("api_key_env", "LLM_API_KEY")), ""))
+    base_url = _clean_config_value(os.getenv(str(minimax.get("base_url_env", "")), "")) or _clean_config_value(minimax.get("base_url", ""))
+    model = _clean_config_value(os.getenv(str(minimax.get("model_env", "TTS_MODEL")), "")) or _clean_config_value(minimax.get("model", ""))
     group_id = _clean_config_value(os.getenv(str(minimax.get("group_id_env", "MINIMAX_GROUP_ID")), ""))
     voice_id = _clean_config_value(speaker_profile.get("voice_id") or minimax.get("default_voice_id") or tts_config.get("voice"))
     if not api_key:
-        raise RuntimeError("TTS provider minimax requires MINIMAX_API_KEY.")
+        raise RuntimeError("TTS provider minimax requires LLM_API_KEY.")
     if not model:
-        raise RuntimeError("TTS provider minimax requires model or MINIMAX_TTS_MODEL.")
+        raise RuntimeError("TTS provider minimax requires TTS_MODEL.")
     if not voice_id:
         raise RuntimeError("TTS provider minimax requires voice_id for speaker profile.")
 
