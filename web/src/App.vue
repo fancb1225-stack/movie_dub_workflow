@@ -76,7 +76,7 @@ async function submitWorkflowSettings(value: WorkflowOverrides): Promise<void> {
         <OperationPanel
           :disabled="!jobs.hasJob.value || jobs.busy.value || workflow.running.value"
           :has-artifacts="jobs.hasArtifacts.value"
-          @probe="runSafely(() => jobs.runOperation('媒体探测', '/media/probe', 'GET'))"
+          @probe="runSafely(() => jobs.runOperation('文件信息', '/media/probe', 'GET'))"
           @extract-audio="runSafely(() => jobs.runOperation('音频提取', '/media/extract-audio'))"
           @separate="runSafely(() => jobs.runOperation('人声/背景分离', '/audio/separate'))"
           @background="runSafely(() => jobs.runOperation('背景音提取', '/audio/background'))"

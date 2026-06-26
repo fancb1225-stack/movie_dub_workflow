@@ -3,11 +3,9 @@ import { listJobFiles, requestJson, streamEvents } from "../api/client";
 import type { Job, StepState, VoiceOption, WorkflowEvent, WorkflowOverrides } from "../types/api";
 
 const PREPROCESS_STEPS: StepState[] = [
-  { key: "probe", label: "媒体探测", status: "等待", kind: "idle" },
   { key: "extract_audio", label: "音频提取", status: "等待", kind: "idle" },
   { key: "separate_audio", label: "人声/背景分离", status: "等待", kind: "idle" },
-  { key: "background", label: "背景音提取", status: "等待", kind: "idle" },
-  { key: "speakers", label: "说话人识别", status: "等待", kind: "idle" }
+  { key: "background", label: "背景音提取", status: "等待", kind: "idle" }
 ];
 
 const WORKFLOW_STEPS: StepState[] = [

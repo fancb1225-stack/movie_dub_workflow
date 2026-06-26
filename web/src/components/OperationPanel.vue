@@ -27,7 +27,7 @@ const audioFile = ref<File | null>(null);
       <span>确定性工具</span>
     </div>
     <div class="operation-list">
-      <button type="button" :disabled="props.disabled" @click="emit('probe')"><span>◉</span><strong>媒体探测</strong><small>读取格式与时长</small></button>
+      <button type="button" :disabled="props.disabled" @click="emit('probe')"><span>◉</span><strong>文件信息</strong><small>读取格式与时长</small></button>
       <button type="button" :disabled="props.disabled" @click="emit('extractAudio')"><span>♪</span><strong>提取音频</strong><small>从视频分离音轨</small></button>
       <button type="button" :disabled="props.disabled" @click="emit('separate')"><span>≋</span><strong>分离人声</strong><small>生成 vocals/background</small></button>
       <button type="button" :disabled="props.disabled" @click="emit('background')"><span>◇</span><strong>背景音</strong><small>使用 no-vocals stem</small></button>
