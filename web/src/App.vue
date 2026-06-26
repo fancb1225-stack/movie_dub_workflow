@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import AppHeader from "./components/AppHeader.vue";
-import FileList from "./components/FileList.vue";
 import JobPickerModal from "./components/JobPickerModal.vue";
 import JobSummary from "./components/JobSummary.vue";
 import OperationPanel from "./components/OperationPanel.vue";
@@ -97,12 +96,6 @@ async function submitWorkflowSettings(value: WorkflowOverrides): Promise<void> {
           @preprocess="runSafely(workflow.runPreprocess)"
           @run="openWorkflowSettings('run')"
           @resume="openWorkflowSettings('resume')"
-        />
-        <FileList
-          :disabled="!jobs.hasJob.value"
-          :files="jobs.files.value"
-          @refresh="runSafely(() => jobs.refreshFiles(true))"
-          @download="jobs.downloadFile"
         />
         <OutputPanel :output="jobs.output.value" @clear="jobs.clearOutput" />
       </section>
