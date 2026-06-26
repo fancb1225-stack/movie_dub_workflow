@@ -3,10 +3,17 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from src.tools.tts_tools import _generate_edge_tts, _generate_minimax_tts, generate_tts_segments
+from src.tools.tts_tools import (
+    FatalTtsError,
+    _generate_edge_tts,
+    _generate_minimax_tts,
+    _minimax_request_json,
+    generate_tts_segments,
+)
 
 
 class TtsToolsTests(unittest.TestCase):
@@ -120,6 +127,98 @@ class TtsToolsTests(unittest.TestCase):
         self.assertEqual(calls[0]["payload"]["model"], "speech-01")
         self.assertEqual(calls[0]["url"], "https://token.cxtfun.com/v1/minimax/tts/async")
         self.assertEqual(calls[1]["url"], "https://token.cxtfun.com/v1/minimax/tts/tasks/task-1")
+
+    def test_minimax_json_error_response_raises_fatal_tts_error(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return (
+                    b'{"error":{"code":"access_denied","message":"IP is not allowed",'
+                    b'"type":"fun_api_error"}}'
+                )
+
+        with patch("urllib.request.urlopen", return_value=FakeResponse()):
+            with self.assertRaisesRegex(FatalTtsError, "access_denied.*IP is not allowed"):
+                _minimax_request_json(
+                    "POST",
+                    "https://example.test/tts",
+                    "key-1",
+                    {"text": "hello"},
+                    timeout=1,
+                    max_retries=3,
+                )
+
+    def test_minimax_access_denied_http_error_does_not_retry(self) -> None:
+        calls = []
+
+        class FakeHttpError(urllib.error.HTTPError):
+            def read(self):
+                return (
+                    b'{"error":{"code":"access_denied","message":"IP is not allowed",'
+                    b'"type":"fun_api_error"}}'
+                )
+
+        def fake_urlopen(request, timeout):
+            calls.append(request)
+            raise FakeHttpError(
+                "https://example.test/tts",
+                403,
+                "Forbidden",
+                hdrs=None,
+                fp=None,
+            )
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with self.assertRaisesRegex(FatalTtsError, "HTTP 403.*access_denied.*IP is not allowed"):
+                _minimax_request_json(
+                    "POST",
+                    "https://example.test/tts",
+                    "key-1",
+                    {"text": "hello"},
+                    timeout=1,
+                    max_retries=3,
+                )
+
+        self.assertEqual(len(calls), 1)
+
+    def test_generate_segments_aborts_on_fatal_tts_error(self) -> None:
+        cues = [
+            {
+                "index": i,
+                "start": "00:00:00,000",
+                "end": "00:00:01,000",
+                "start_ms": 0,
+                "end_ms": 1000,
+                "text": f"hello {i}",
+            }
+            for i in range(1, 4)
+        ]
+
+        def fail_minimax(text, path, config, speaker_profile):
+            raise FatalTtsError("MiniMax TTS access_denied: IP is not allowed")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("src.tools.tts_tools._generate_minimax_tts", side_effect=fail_minimax) as minimax, \
+                patch("src.tools.tts_tools.logger"):
+                with self.assertRaisesRegex(FatalTtsError, "access_denied"):
+                    generate_tts_segments(
+                        cues,
+                        Path(tmp),
+                        {
+                            "tts": {
+                                "provider": "minimax",
+                                "concurrency": 25,
+                                "speaker_profiles": {"default": {"voice_id": "voice-a"}},
+                            }
+                        },
+                    )
+
+        self.assertEqual(minimax.call_count, 1)
 
     def test_generate_segments_uses_configured_concurrency(self) -> None:
         cues = [

@@ -22,6 +22,10 @@ from src.tools.file_tools import clean_dir, ensure_dir
 logger = logging.getLogger(__name__)
 
 
+class FatalTtsError(RuntimeError):
+    """Unrecoverable TTS configuration or provider error."""
+
+
 def generate_tts_segments(
     cues: list[SrtCue],
     output_dir: str | Path,
@@ -38,11 +42,13 @@ def generate_tts_segments(
     if max_workers <= 1 or len(cues) <= 1:
         segments = [_generate_one_tts_segment(cue, directory, config, tts_config, provider) for cue in cues]
     else:
-        results: dict[int, TtsSegment] = {}
+        results: dict[int, TtsSegment] = {
+            0: _generate_one_tts_segment(cues[0], directory, config, tts_config, provider)
+        }
         with ThreadPoolExecutor(max_workers=min(max_workers, len(cues))) as executor:
             futures = {
                 executor.submit(_generate_one_tts_segment, cue, directory, config, tts_config, provider): idx
-                for idx, cue in enumerate(cues)
+                for idx, cue in enumerate(cues[1:], start=1)
             }
             for future in as_completed(futures):
                 results[futures[future]] = future.result()
@@ -92,6 +98,9 @@ def _generate_one_tts_segment(
         if speaker_profile.get("speed") is not None:
             segment["speed"] = float(speaker_profile["speed"])
         return segment
+    except FatalTtsError:
+        logger.error("TTS segment %d FATAL:\n%s", cue["index"], traceback.format_exc())
+        raise
     except Exception as exc:
         logger.error(
             "TTS segment %d FAILED: %s\n%s",
@@ -196,6 +205,44 @@ def _find_first(data: Any, names: set[str]) -> Any:
     return None
 
 
+def _minimax_error_message(error: Any, *, status_code: int | None = None, reason: str = "") -> str | None:
+    if not isinstance(error, dict):
+        return None
+    code = str(error.get("code") or error.get("type") or "unknown")
+    message = str(error.get("message") or error.get("msg") or "")
+    parts = ["MiniMax TTS request fatal error"]
+    if status_code is not None:
+        parts.append(f"HTTP {status_code}")
+    if reason:
+        parts.append(reason)
+    parts.append(code)
+    if message:
+        parts.append(message)
+    return ": ".join(parts)
+
+
+def _minimax_fatal_error_from_body(
+    body: str,
+    *,
+    status_code: int | None = None,
+    reason: str = "",
+) -> FatalTtsError | None:
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    error = parsed.get("error")
+    message = _minimax_error_message(error, status_code=status_code, reason=reason)
+    if message is None:
+        return None
+    code = str(error.get("code") or "").lower() if isinstance(error, dict) else ""
+    if code == "access_denied" or status_code in {401, 403}:
+        return FatalTtsError(message)
+    return None
+
+
 def _minimax_request_json(
     method: str,
     url: str,
@@ -219,9 +266,17 @@ def _minimax_request_json(
             parsed = json.loads(body)
             if not isinstance(parsed, dict):
                 raise RuntimeError(f"MiniMax returned non-object JSON: {body[:300]}")
+            fatal_error = _minimax_fatal_error_from_body(body)
+            if fatal_error is not None:
+                raise fatal_error
             return parsed
+        except FatalTtsError:
+            raise
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
+            fatal_error = _minimax_fatal_error_from_body(body, status_code=exc.code, reason=exc.reason)
+            if fatal_error is not None:
+                raise fatal_error
             last_error = f"HTTP {exc.code}: {exc.reason}; response={body[:500]}"
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, RuntimeError) as exc:
             last_error = exc
@@ -422,4 +477,3 @@ def _run_async(coro: Any) -> Any:
         raise error
     logger.debug("_run_async: thread completed successfully, result=%s", type(result).__name__)
     return result
-

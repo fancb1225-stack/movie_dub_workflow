@@ -716,10 +716,15 @@ def _workflow_hint(error: str) -> str:
             "页面触发的 job 工作流默认不再使用 mock ASR。请安装 faster-whisper，"
             "或在 config.yaml 中将 workflow.allow_mock_asr_for_jobs 设为 true 仅用于测试。"
         )
+    if "access_denied" in lowered or "ip" in lowered and "允许访问" in error:
+        if "minimax" in lowered or "tts" in lowered:
+            return (
+                "MiniMax TTS 服务拒绝访问。请检查 MiniMax/TTS 服务的 IP 白名单、"
+                "LLM_API_KEY、MINIMAX_GROUP_ID、TTS_MODEL 和 base_url 配置。"
+            )
+        return "LLM 服务拒绝访问。请检查 LLM 服务的 IP 白名单、API Key 权限和 LLM_BASE_URL。"
     if "edge_tts" in lowered or "tts" in lowered:
         return "TTS 依赖或配置不可用。请检查 tts.provider/voice 配置，或先使用 mock TTS 验证流程。"
-    if "access_denied" in lowered or "ip" in lowered and "允许访问" in error:
-        return "LLM 服务拒绝访问。请检查 LLM 服务的 IP 白名单、API Key 权限和 LLM_BASE_URL。"
     if "llm" in lowered or "http" in lowered or "api" in lowered:
         return "LLM 校对/翻译请求失败。请检查 LLM_API_KEY、LLM_BASE_URL、LLM_MODEL 或将 llm.model 设为 mock。"
     return "请查看 outputs/jobs/<job_id>/reports/langgraph_workflow_report.json，并确认已完成人声分离。"

@@ -191,6 +191,14 @@ class WorkflowServiceTests(unittest.TestCase):
         self.assertIn("LLM 服务拒绝访问", hint)
         self.assertIn("IP 白名单", hint)
 
+    def test_workflow_hint_prioritizes_minimax_access_denied(self) -> None:
+        hint = _workflow_hint(
+            "MiniMax TTS request fatal error: HTTP 403: Forbidden: access_denied: IP is not allowed"
+        )
+
+        self.assertIn("MiniMax", hint)
+        self.assertIn("IP", hint)
+
     def test_job_workflow_config_writes_video_type_into_job_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = _config(temp_dir)
