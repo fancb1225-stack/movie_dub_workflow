@@ -21,7 +21,12 @@ from src.tools.asr_tools import transcribe_mp3_to_srt, write_asr_report
 from src.tools.asr_words import cues_from_asr_words_file
 from src.tools.file_tools import ensure_dir, write_json
 from src.tools.srt_tools import parse_srt
-from src.video_types import DEFAULT_VIDEO_TYPE, normalize_video_type
+from src.video_types import (
+    DEFAULT_VIDEO_TYPE,
+    VIDEO_TYPE_MANJU,
+    VIDEO_TYPE_MOVIE_COMMENTARY,
+    normalize_video_type,
+)
 from src.workflow_pause import WorkflowPauseRequired
 
 logger = logging.getLogger(__name__)
@@ -399,7 +404,7 @@ def _run_job_asr(
     vocals_path = _resolve_vocals_audio(job)
     if vocals_path is None:
         raise RuntimeError("找不到人声音频文件。请先执行预处理完成人声/背景分离。")
-    _apply_forced_job_asr_provider(job_config)
+    _apply_video_type_asr_provider(job_config)
     _ensure_job_mock_asr_allowed(job_config)
     job_config["paths"]["input_mp3"] = str(vocals_path)
     output_words_json = Path(job_config["paths"]["asr_words"])
@@ -586,10 +591,16 @@ def _ensure_job_config_metadata(
             config["job"][key] = value
 
 
-def _apply_forced_job_asr_provider(config: dict[str, Any]) -> None:
-    provider = str(config.get("workflow", {}).get("force_job_asr_provider", "") or "").strip()
-    if provider:
-        config.setdefault("asr", {})["provider"] = provider
+def _apply_video_type_asr_provider(config: dict[str, Any]) -> None:
+    video_type = normalize_video_type(config.get("job", {}).get("video_type", DEFAULT_VIDEO_TYPE))
+    workflow_config = config.get("workflow", {})
+    asr_config = config.setdefault("asr", {})
+    if video_type == VIDEO_TYPE_MANJU:
+        asr_config["provider"] = str(workflow_config.get("manju_asr_provider", "whisperx"))
+        asr_config.pop("default_speaker_id", None)
+    elif video_type == VIDEO_TYPE_MOVIE_COMMENTARY:
+        asr_config["provider"] = str(workflow_config.get("movie_commentary_asr_provider", "faster_whisper"))
+        asr_config["default_speaker_id"] = str(workflow_config.get("movie_commentary_default_speaker_id", "speaker_0"))
 
 
 def _ensure_job_mock_asr_allowed(config: dict[str, Any]) -> None:

@@ -47,7 +47,12 @@ video:
 
 workflow:
   allow_mock_asr_for_jobs: false
-  force_job_asr_provider: whisperx
+  # Job ASR strategy is selected by video_type.
+  # movie_commentary: faster_whisper with a single default speaker_0.
+  # manju: whisperx with diarization.
+  movie_commentary_asr_provider: faster_whisper
+  movie_commentary_default_speaker_id: speaker_0
+  manju_asr_provider: whisperx
 
 asr:
   provider: mock

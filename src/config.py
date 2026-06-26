@@ -54,7 +54,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "workflow": {
         "allow_mock_asr_for_jobs": False,
-        "force_job_asr_provider": "whisperx",
+        "movie_commentary_asr_provider": "faster_whisper",
+        "movie_commentary_default_speaker_id": "speaker_0",
+        "manju_asr_provider": "whisperx",
     },
     "asr": {
         "provider": "mock",

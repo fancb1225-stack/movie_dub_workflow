@@ -66,10 +66,9 @@ class WorkflowServiceTests(unittest.TestCase):
             updated = JobService(config).get_job(job["job_id"])
             self.assertEqual(updated["status"], "langgraph_failed")
 
-    def test_run_job_asr_forces_configured_provider(self) -> None:
+    def test_run_job_asr_defaults_movie_commentary_to_faster_whisper(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = _config(temp_dir, allow_mock_asr_for_jobs=False)
-            config["workflow"]["force_job_asr_provider"] = "faster_whisper"
             config["asr"]["provider"] = "mock"
             job = _create_job(config, "job-asr-provider")
             vocals_path = Path(job["paths"]["media_dir"]) / "separation" / "vocals.wav"
@@ -102,20 +101,94 @@ class WorkflowServiceTests(unittest.TestCase):
             self.assertEqual(updated["status"], "asr_completed")
             self.assertIn("raw_srt", updated["artifacts"])
 
-    def test_run_job_asr_rejects_mock_when_not_allowed(self) -> None:
+    def test_run_job_asr_uses_faster_whisper_for_movie_commentary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = _config(temp_dir, allow_mock_asr_for_jobs=False)
-            config["workflow"]["force_job_asr_provider"] = ""
+            job = _create_job(config, "job-asr-movie")
+            job["video_type"] = "movie_commentary"
+            JobService(config).save_job(job)
+            vocals_path = Path(job["paths"]["media_dir"]) / "separation" / "vocals.wav"
+            _write_wav(vocals_path)
+            captured_asr: list[dict[str, Any]] = []
+
+            def fake_transcribe(input_audio: Path, output_words: Path, job_config: dict[str, Any]) -> dict[str, Any]:
+                captured_asr.append(dict(job_config["asr"]))
+                srt_text = "1\n00:00:00,000 --> 00:00:01,000\n测试字幕\n"
+                return {
+                    "provider": job_config["asr"]["provider"],
+                    "input_mp3": str(input_audio),
+                    "words_json": None,
+                    "subtitle_count": 1,
+                    "cues": [{"index": 1, "start_ms": 0, "end_ms": 1000, "text": "测试字幕", "speaker_id": "speaker_0"}],
+                    "srt": srt_text,
+                    "words": [],
+                    "speakers": ["speaker_0"],
+                }
+
+            with patch("src.services.workflow_service.transcribe_mp3_to_srt", side_effect=fake_transcribe):
+                report = WorkflowService(config).run_job_asr(job["job_id"])
+
+            self.assertEqual(report["provider"], "faster_whisper")
+            self.assertEqual(report["speakers"], ["speaker_0"])
+            self.assertEqual(captured_asr[0]["provider"], "faster_whisper")
+            self.assertEqual(captured_asr[0]["default_speaker_id"], "speaker_0")
+
+    def test_run_job_asr_uses_whisperx_for_manju(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = _config(temp_dir, allow_mock_asr_for_jobs=False)
+            job = _create_job(config, "job-asr-manju")
+            job["video_type"] = "manju"
+            JobService(config).save_job(job)
+            vocals_path = Path(job["paths"]["media_dir"]) / "separation" / "vocals.wav"
+            _write_wav(vocals_path)
+            captured_providers: list[str] = []
+
+            def fake_transcribe(input_audio: Path, output_words: Path, job_config: dict[str, Any]) -> dict[str, Any]:
+                captured_providers.append(job_config["asr"]["provider"])
+                srt_text = "1\n00:00:00,000 --> 00:00:01,000\n测试字幕\n"
+                return {
+                    "provider": job_config["asr"]["provider"],
+                    "input_mp3": str(input_audio),
+                    "words_json": None,
+                    "subtitle_count": 1,
+                    "cues": [],
+                    "srt": srt_text,
+                    "words": [],
+                    "speakers": ["speaker_1"],
+                }
+
+            with patch("src.services.workflow_service.transcribe_mp3_to_srt", side_effect=fake_transcribe):
+                report = WorkflowService(config).run_job_asr(job["job_id"])
+
+            self.assertEqual(report["provider"], "whisperx")
+            self.assertEqual(captured_providers, ["whisperx"])
+
+    def test_run_job_asr_overrides_mock_for_movie_commentary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = _config(temp_dir, allow_mock_asr_for_jobs=False)
             config["asr"]["provider"] = "mock"
             job = _create_job(config, "job-asr-mock-blocked")
             vocals_path = Path(job["paths"]["media_dir"]) / "separation" / "vocals.wav"
             _write_wav(vocals_path)
 
-            with patch("src.services.workflow_service.transcribe_mp3_to_srt") as transcribe:
-                with self.assertRaisesRegex(RuntimeError, "mock ASR"):
-                    WorkflowService(config).run_job_asr(job["job_id"])
+            def fake_transcribe(input_audio: Path, output_words: Path, job_config: dict[str, Any]) -> dict[str, Any]:
+                srt_text = "1\n00:00:00,000 --> 00:00:01,000\n测试字幕\n"
+                return {
+                    "provider": job_config["asr"]["provider"],
+                    "input_mp3": str(input_audio),
+                    "words_json": None,
+                    "subtitle_count": 1,
+                    "cues": [],
+                    "srt": srt_text,
+                    "words": [],
+                    "speakers": ["speaker_0"],
+                }
 
-            transcribe.assert_not_called()
+            with patch("src.services.workflow_service.transcribe_mp3_to_srt", side_effect=fake_transcribe) as transcribe:
+                report = WorkflowService(config).run_job_asr(job["job_id"])
+
+            self.assertEqual(report["provider"], "faster_whisper")
+            self.assertEqual(transcribe.call_args.args[2]["asr"]["provider"], "faster_whisper")
 
     def test_run_job_asr_allows_mock_when_configured_for_tests(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -265,7 +338,9 @@ def _config(temp_dir: str, allow_mock_asr_for_jobs: bool = True) -> dict[str, An
         "asr": {"provider": "mock", "mock_when_missing_input": True},
         "workflow": {
             "allow_mock_asr_for_jobs": allow_mock_asr_for_jobs,
-            "force_job_asr_provider": "faster_whisper",
+            "movie_commentary_asr_provider": "faster_whisper",
+            "movie_commentary_default_speaker_id": "speaker_0",
+            "manju_asr_provider": "whisperx",
         },
         "translation": {"allow_mock_fallback": True},
         "llm": {"model": "mock", "api_key": "", "base_url": "", "timeout": 1, "max_retries": 0},

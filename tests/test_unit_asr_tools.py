@@ -96,6 +96,22 @@ class WhisperxProviderDispatchTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     transcribe_mp3_to_srt(Path(d) / "x.mp3", out, {"asr": {"provider": "whisperx"}})
 
+    def test_faster_whisper_assigns_default_speaker(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "out.words.json"
+            fake_cues = [{"index": 1, "start_ms": 0, "end_ms": 1000, "text": "hello"}]
+            with patch.object(asr_tools, "_transcribe_with_faster_whisper", return_value=fake_cues):
+                result = transcribe_mp3_to_srt(
+                    Path(d) / "x.mp3",
+                    out,
+                    {"asr": {"provider": "faster_whisper", "default_speaker_id": "speaker_0"}},
+                )
+
+        self.assertEqual(result["provider"], "faster_whisper")
+        self.assertEqual(result["cues"][0]["speaker_id"], "speaker_0")
+        self.assertEqual(result["speakers"], ["speaker_0"])
+        self.assertFalse(result["diarized"])
+
 
 class WhisperxTranscribeTests(unittest.TestCase):
     def _install_fake_whisperx(self, diarize_fail: bool = False) -> types.ModuleType:

@@ -36,6 +36,7 @@ def transcribe_mp3_to_srt(
     diarized = False
     if provider == "faster_whisper":
         cues = _transcribe_with_faster_whisper(input_path, asr_config)
+        _assign_default_speaker(cues, str(asr_config.get("default_speaker_id", "speaker_0")))
     elif provider == "whisperx":
         try:
             cues, words = _transcribe_with_whisperx(input_path, asr_config)
@@ -74,6 +75,13 @@ def transcribe_mp3_to_srt(
         "diarized": diarized,
         "alignment": alignment,
     }
+
+
+def _assign_default_speaker(cues: list[SrtCue], speaker_id: str) -> None:
+    if not speaker_id:
+        return
+    for cue in cues:
+        cue.setdefault("speaker_id", speaker_id)
 
 
 def write_asr_report(path: str | Path, asr_result: dict[str, Any]) -> str:

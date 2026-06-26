@@ -44,3 +44,6 @@ scripts/
 experiments/
 
 docs/
+
+# Local weekly summary documents
+本周工作总结_*.docx
