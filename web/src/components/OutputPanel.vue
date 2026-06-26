@@ -10,7 +10,7 @@ const formatted = computed(() => JSON.stringify(props.output ?? {}, null, 2));
 <template>
   <section class="panel wide-panel">
     <div class="panel-title">
-      <h2>输出</h2>
+      <h2><span class="panel-number">6.</span>JSON 输出</h2>
       <button type="button" class="ghost" @click="emit('clear')">清空</button>
     </div>
     <pre class="output">{{ formatted }}</pre>

@@ -27,13 +27,19 @@ function formatBytes(value?: number): string {
 <template>
   <section class="panel wide-panel">
     <div class="panel-title">
-      <h2>文件</h2>
+      <h2><span class="panel-number">5.</span>文件与产物</h2>
       <button type="button" class="icon-button" :disabled="props.disabled" title="刷新文件" @click="emit('refresh')">↻</button>
     </div>
-    <div class="file-list" v-if="props.files.length">
+    <div class="file-table" v-if="props.files.length">
+      <div class="file-table-head">
+        <span>Name</span>
+        <span>Size</span>
+        <span>Action</span>
+      </div>
       <button v-for="file in props.files" :key="file.relative_path" type="button" class="file-row" @click="emit('download', file.relative_path)">
-        <span>{{ file.relative_path }}</span>
+        <span class="file-name"><i aria-hidden="true">{{ file.relative_path.endsWith('.mp4') ? '▥' : file.relative_path.endsWith('.json') ? '{}' : '♪' }}</i>{{ file.relative_path }}</span>
         <strong>{{ formatBytes(file.size_bytes) }}</strong>
+        <em>⇩</em>
       </button>
     </div>
     <p v-else class="empty">暂无文件。</p>

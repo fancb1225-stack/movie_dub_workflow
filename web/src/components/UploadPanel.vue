@@ -17,19 +17,25 @@ function submit(): void {
 </script>
 
 <template>
-  <section class="panel">
+  <section class="panel numbered-panel">
     <div class="panel-title">
-      <h2>创建任务</h2>
+      <h2><span class="panel-number">1.</span>上传媒体</h2>
       <span>MP4 / MP3</span>
     </div>
-    <label for="uploadFile">媒体文件</label>
-    <input id="uploadFile" type="file" accept=".mp4,.mp3,audio/*,video/mp4" @change="selectedFile = ($event.target as HTMLInputElement).files?.[0] || null" />
-    <label for="videoType">内容类型</label>
-    <select id="videoType" v-model="videoType">
-      <option value="movie">电影/短片</option>
-      <option value="commentary">解说</option>
-      <option value="general">通用</option>
-    </select>
-    <button type="button" :disabled="busy || !selectedFile" @click="submit">上传并创建</button>
+    <label class="dropzone" for="uploadFile">
+      <span class="drop-icon">⇧</span>
+      <strong>{{ selectedFile ? selectedFile.name : "选择或拖入 MP4 / MP3 文件" }}</strong>
+      <small>任务文件会隔离到 outputs/jobs/&lt;job_id&gt;/</small>
+      <input id="uploadFile" type="file" accept=".mp4,.mp3,audio/*,video/mp4" @change="selectedFile = ($event.target as HTMLInputElement).files?.[0] || null" />
+    </label>
+    <div class="inline-form">
+      <label for="videoType">内容类型</label>
+      <select id="videoType" v-model="videoType">
+        <option value="movie">电影/短片</option>
+        <option value="commentary">解说</option>
+        <option value="general">通用</option>
+      </select>
+    </div>
+    <button type="button" class="primary full-width" :disabled="busy || !selectedFile" @click="submit">创建 Job</button>
   </section>
 </template>
