@@ -51,6 +51,17 @@ async function openWorkflowSettings(mode: "run" | "resume"): Promise<void> {
 async function submitWorkflowSettings(value: WorkflowOverrides): Promise<void> {
   await runSafely(() => workflow.submitSettings(value));
 }
+
+async function uploadJob(file: File, videoType: string): Promise<void> {
+  workflow.clearLog();
+  await jobs.upload(file, videoType);
+}
+
+async function selectJob(jobId: string): Promise<void> {
+  workflow.clearLog();
+  await jobs.openJob(jobId);
+  jobPickerOpen.value = false;
+}
 </script>
 
 <template>
@@ -65,7 +76,7 @@ async function submitWorkflowSettings(value: WorkflowOverrides): Promise<void> {
 
     <main>
       <section class="stack">
-        <UploadPanel :busy="jobs.busy.value" @upload="(payload) => runSafely(() => jobs.upload(payload.file, payload.videoType))" />
+        <UploadPanel :busy="jobs.busy.value" @upload="(payload) => runSafely(() => uploadJob(payload.file, payload.videoType))" />
         <JobSummary
           :job="jobs.job.value"
           :message="jobs.message.value"
@@ -97,6 +108,7 @@ async function submitWorkflowSettings(value: WorkflowOverrides): Promise<void> {
           @speakers="runSafely(workflow.runSpeakerIdentify)"
           @run="openWorkflowSettings('run')"
           @resume="openWorkflowSettings('resume')"
+          @clear-log="workflow.clearLog"
         />
         <OutputPanel :output="jobs.output.value" @clear="jobs.clearOutput" />
       </section>
@@ -106,7 +118,7 @@ async function submitWorkflowSettings(value: WorkflowOverrides): Promise<void> {
       :open="jobPickerOpen"
       :jobs="jobs.jobs.value"
       @close="jobPickerOpen = false"
-      @select="(jobId) => runSafely(async () => { await jobs.openJob(jobId); jobPickerOpen = false; })"
+      @select="(jobId) => runSafely(() => selectJob(jobId))"
     />
 
     <WorkflowSettingsModal

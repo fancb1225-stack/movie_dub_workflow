@@ -14,6 +14,7 @@ const emit = defineEmits<{
   speakers: [];
   run: [];
   resume: [];
+  clearLog: [];
 }>();
 </script>
 
@@ -56,6 +57,10 @@ const emit = defineEmits<{
       </div>
     </div>
     <div class="log-box">
+      <div class="log-toolbar">
+        <span>事件日志</span>
+        <button type="button" class="ghost" :disabled="!props.logLines.length" @click="emit('clearLog')">清空</button>
+      </div>
       <p v-if="!props.logLines.length" class="empty">暂无事件。</p>
       <div v-for="line in props.logLines" :key="line">{{ line }}</div>
     </div>

@@ -67,6 +67,10 @@ export function useWorkflow(
     logLines.value = [`[${stamp}] ${text}`, ...logLines.value].slice(0, 160);
   }
 
+  function clearLog(): void {
+    logLines.value = [];
+  }
+
   function updateStep(target: Ref<StepState[]>, event: WorkflowEvent): void {
     const key = String(event.node || event.event || "");
     if (!key) return;
@@ -247,6 +251,7 @@ export function useWorkflow(
     voiceOptions,
     runPreprocess,
     runSpeakerIdentify,
+    clearLog,
     openSettings,
     closeSettings,
     submitSettings,
