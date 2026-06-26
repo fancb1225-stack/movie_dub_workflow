@@ -21,14 +21,14 @@ const emit = defineEmits<{
         <div>
           <div class="brand-title-row">
             <h1>电影配音控制台</h1>
-            <span class="version-pill">Vue + TS</span>
+            <span class="version-pill">Vue 3 · TypeScript</span>
           </div>
           <p class="subtitle">媒体预处理、LangGraph 配音、产物下载与视频封装</p>
         </div>
       </div>
       <div class="api-row">
         <span class="status-dot" aria-hidden="true"></span>
-        <span class="health-label">API Health</span>
+        <span class="health-label">接口状态</span>
         <span class="health-pill">{{ props.health }}</span>
         <input id="apiBase" :value="props.apiBase" type="text" placeholder="留空使用当前域名" @input="emit('update:apiBase', ($event.target as HTMLInputElement).value)" />
         <button type="button" class="ghost icon-text" @click="emit('checkHealth')"><span>↻</span>检查</button>
