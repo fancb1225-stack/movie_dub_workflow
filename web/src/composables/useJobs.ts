@@ -65,8 +65,10 @@ export function useJobs() {
     if (!job.value) return;
     const data = await getJob(apiBase.value, job.value.job_id);
     job.value = data;
-    setOutput(data);
-    if (showMessage) setMessage("任务状态已刷新", "ok");
+    if (showMessage) {
+      setOutput(data);
+      setMessage("任务状态已刷新", "ok");
+    }
   }
 
   async function refreshFiles(showMessage = false): Promise<void> {
