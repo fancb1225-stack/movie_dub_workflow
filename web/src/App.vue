@@ -43,6 +43,7 @@ async function openJobPicker(): Promise<void> {
 
 async function openWorkflowSettings(mode: "run" | "resume"): Promise<void> {
   await runSafely(async () => {
+    await workflow.loadVoiceOptions();
     await workflow.loadSpeakerProfiles();
     workflow.openSettings(mode);
   });
@@ -90,7 +91,6 @@ async function selectJob(jobId: string): Promise<void> {
           @probe="runSafely(() => jobs.runOperation('文件信息', '/media/probe', 'GET'))"
           @extract-audio="runSafely(() => jobs.runOperation('音频提取', '/media/extract-audio'))"
           @separate="runSafely(() => jobs.runOperation('人声/背景分离', '/audio/separate'))"
-          @background="runSafely(() => jobs.runOperation('背景音提取', '/audio/background'))"
           @speakers="runSafely(() => jobs.runOperation('说话人识别', '/speakers/identify'))"
           @package-video="(payload) => runSafely(() => jobs.packageCurrentVideo(payload.outputFilename, payload.audioFile))"
           @download-artifacts="jobs.downloadArtifacts"
@@ -105,6 +105,7 @@ async function selectJob(jobId: string): Promise<void> {
           :workflow-steps="workflow.workflowSteps.value"
           :log-lines="workflow.logLines.value"
           @preprocess="runSafely(workflow.runPreprocess)"
+          @asr="runSafely(workflow.runAsr)"
           @speakers="runSafely(workflow.runSpeakerIdentify)"
           @run="openWorkflowSettings('run')"
           @resume="openWorkflowSettings('resume')"
@@ -126,6 +127,7 @@ async function selectJob(jobId: string): Promise<void> {
       :mode="workflow.settingsMode.value"
       :initial-overrides="workflow.overrides.value"
       :speaker-profiles="workflow.speakerProfiles.value"
+      :voice-options="workflow.voiceOptions.value"
       @close="workflow.closeSettings"
       @submit="submitWorkflowSettings"
     />

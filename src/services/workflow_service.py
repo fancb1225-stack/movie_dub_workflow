@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 PREPROCESS_STEPS = [
     {"node": "extract_audio", "label": "提取音频"},
     {"node": "separate_audio", "label": "分离人声与背景音"},
-    {"node": "asr_transcribe", "label": "ASR 语音识别"},
 ]
 
 WORKFLOW_STEPS = [
@@ -81,38 +80,15 @@ class WorkflowService:
             yield {"event": "error", "error": str(exc), "hint": "人声分离失败。请检查 Demucs 安装和配置。"}
             return
 
-        # Step 3: ASR transcribe
-        job = self.jobs.get_job(job_id)
-        vocals_path = _resolve_vocals_audio(job)
-        if vocals_path is None:
-            yield {"event": "error", "error": "找不到人声音频文件。", "hint": "人声分离似乎未成功，请重试。"}
-            return
-        try:
-            job_config = _job_workflow_config(self.config, job, _resolve_background_audio(job))
-            _apply_forced_job_asr_provider(job_config)
-            _ensure_job_mock_asr_allowed(job_config)
-            job_config["paths"]["input_mp3"] = str(vocals_path)
-            output_words_json = Path(job_config["paths"]["asr_words"])
-            ensure_dir(output_words_json.parent)
-            asr_result = transcribe_mp3_to_srt(vocals_path, output_words_json, job_config)
-            report_path = Path(job["paths"]["reports_dir"]) / "asr_report.json"
-            write_asr_report(report_path, asr_result)
-            self.jobs.update_job(
-                job_id,
-                status="preprocessed",
-                artifacts={
-                    "vocals_wav": str(vocals_path),
-                    "raw_words": str(output_words_json),
-                    "asr_report": str(report_path),
-                },
-                extra={"asr_result": {k: v for k, v in asr_result.items() if k not in {"cues", "srt", "words"}}},
-            )
-            yield {"event": "progress", "node": "asr_transcribe", "label": "ASR 语音识别", "status": "done", "index": 3, "total": len(PREPROCESS_STEPS)}
-        except Exception as exc:
-            yield {"event": "error", "error": str(exc), "hint": "ASR 语音识别失败。请检查 faster-whisper 安装或 asr 配置。"}
-            return
+        self.jobs.update_job(job_id, status="preprocessed")
+        yield {"event": "done", "hint": "预处理完成。可以执行 ASR 语音识别。"}
 
-        yield {"event": "done", "hint": "预处理完成。可以运行翻译与配音工作流。"}
+    def run_job_asr(self, job_id: str) -> dict[str, Any]:
+        job = self.jobs.get_job(job_id)
+        background_audio = _resolve_background_audio(job)
+        job_config = _job_workflow_config(self.config, job, background_audio)
+        raw_asr = _run_job_asr(job_id, job, job_config, self.jobs)
+        return _asr_response(job_id, raw_asr, self.jobs.get_job(job_id))
 
     def run_job_langgraph_workflow(self, job_id: str, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         job = self.jobs.get_job(job_id)
@@ -122,7 +98,7 @@ class WorkflowService:
             report = _failure_report(
                 job_id,
                 "Missing raw ASR for LangGraph workflow.",
-                "请先执行预处理，生成 ASR 字幕后再运行翻译与配音工作流。",
+                "请先执行 ASR 语音识别，生成字幕后再运行翻译与配音工作流。",
                 report_path,
             )
             self.jobs.update_job(
@@ -146,7 +122,7 @@ class WorkflowService:
                 "reports": {},
                 "errors": [],
                 "reflection_rounds": 0,
-                "input_video_path": job.get("paths", {}).get("input_file", ""),
+                "input_video_path": job.get("paths", {}).get("input", ""),
             }
             final_state = build_workflow(job_config).invoke(state)
             report = _success_report(job_id, background_audio, final_state, report_path)
@@ -177,14 +153,14 @@ class WorkflowService:
     def run_job_langgraph_workflow_streaming(self, job_id: str, overrides: dict[str, Any] | None = None):
         job = self.jobs.get_job(job_id)
         report_path = Path(job["paths"]["reports_dir"]) / "langgraph_workflow_report.json"
-        raw_asr = _resolve_raw_asr(job)
         background_audio = _resolve_background_audio(job)
         yield {"event": "start", "steps": WORKFLOW_STEPS}
+        raw_asr = _resolve_raw_asr(job)
         if raw_asr is None:
             report = _failure_report(
                 job_id,
                 "Missing raw ASR for LangGraph workflow.",
-                "请先执行预处理，生成 ASR 字幕后再运行翻译与配音工作流。",
+                "请先执行 ASR 语音识别，生成字幕后再运行翻译与配音工作流。",
                 report_path,
             )
             self.jobs.update_job(
@@ -213,7 +189,7 @@ class WorkflowService:
                 "reports": {},
                 "errors": [],
                 "reflection_rounds": 0,
-                "input_video_path": job.get("paths", {}).get("input_file", ""),
+                "input_video_path": job.get("paths", {}).get("input", ""),
             }
             final_state = state
             workflow = build_workflow(job_config)
@@ -331,7 +307,7 @@ class WorkflowService:
                 "reports": {},
                 "errors": [],
                 "reflection_rounds": 0,
-                "input_video_path": job.get("paths", {}).get("input_file", ""),
+                "input_video_path": job.get("paths", {}).get("input", ""),
             }
             last_completed_node = last_completed
         else:
@@ -412,6 +388,60 @@ def _progress_event(node_name: str, state: WorkflowState) -> dict[str, Any]:
     if node_name in {"tts_generate_and_detect", "reflect_duration_issues"}:
         event["reflection_rounds"] = int(state.get("reflection_rounds", 0))
     return event
+
+
+def _run_job_asr(
+    job_id: str,
+    job: dict[str, Any],
+    job_config: dict[str, Any],
+    jobs: JobService,
+) -> tuple[Path, str]:
+    vocals_path = _resolve_vocals_audio(job)
+    if vocals_path is None:
+        raise RuntimeError("找不到人声音频文件。请先执行预处理完成人声/背景分离。")
+    _apply_forced_job_asr_provider(job_config)
+    _ensure_job_mock_asr_allowed(job_config)
+    job_config["paths"]["input_mp3"] = str(vocals_path)
+    output_words_json = Path(job_config["paths"]["asr_words"])
+    ensure_dir(output_words_json.parent)
+    asr_result = transcribe_mp3_to_srt(vocals_path, output_words_json, job_config)
+    output_srt = Path(job_config["paths"]["asr_srt"])
+    ensure_dir(output_srt.parent)
+    output_srt.write_text(str(asr_result["srt"]), encoding="utf-8")
+    report_path = Path(job["paths"]["reports_dir"]) / "asr_report.json"
+    write_asr_report(report_path, asr_result)
+    artifacts = {
+        "vocals_wav": str(vocals_path),
+        "raw_srt": str(output_srt),
+        "asr_report": str(report_path),
+    }
+    words_json = asr_result.get("words_json")
+    raw_asr: tuple[Path, str] = (output_srt, "srt")
+    if words_json and Path(str(words_json)).exists():
+        artifacts["raw_words"] = str(words_json)
+        raw_asr = (Path(str(words_json)), "words")
+    jobs.update_job(
+        job_id,
+        status="asr_completed",
+        artifacts=artifacts,
+        extra={"asr_result": {k: v for k, v in asr_result.items() if k not in {"cues", "srt", "words"}}},
+    )
+    return raw_asr
+
+
+def _asr_response(job_id: str, raw_asr: tuple[Path, str], job: dict[str, Any]) -> dict[str, Any]:
+    asr_result = job.get("asr_result", {})
+    artifacts = job.get("artifacts", {})
+    return {
+        "job_id": job_id,
+        "status": "done",
+        "input_audio": str(_resolve_vocals_audio(job) or ""),
+        "raw_words": str(raw_asr[0]),
+        "asr_report": str(artifacts.get("asr_report", "")),
+        "provider": asr_result.get("provider"),
+        "subtitle_count": asr_result.get("subtitle_count"),
+        "speakers": asr_result.get("speakers", []),
+    }
 
 
 def _resolve_raw_srt(job: dict[str, Any]) -> Path | None:

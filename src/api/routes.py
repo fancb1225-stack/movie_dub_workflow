@@ -7,6 +7,7 @@ from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, 
 from fastapi.responses import FileResponse, StreamingResponse
 
 from src.api.schemas import (
+    AsrResponse,
     BackgroundResponse,
     ExtractAudioResponse,
     JobListResponse,
@@ -19,6 +20,7 @@ from src.api.schemas import (
     PackageVideoResponse,
     SeparationResponse,
     SpeakerResponse,
+    VoiceOptionsResponse,
 )
 from src.services.file_service import FileService
 from src.services.job_service import JobService
@@ -28,6 +30,7 @@ from src.services.speaker_service import SpeakerService
 from src.services.video_service import VideoService
 from src.services.workflow_service import WorkflowService
 from src.video_types import DEFAULT_VIDEO_TYPE
+from src.voice_options import list_voice_options, normalize_speaker_profiles
 
 
 router = APIRouter(prefix="/api")
@@ -43,6 +46,11 @@ def list_jobs(config: dict[str, Any] = Depends(get_config)) -> dict[str, Any]:
         return JobService(config).list_jobs()
     except Exception as exc:
         raise _to_http_exception(exc) from exc
+
+
+@router.get("/tts/voices", response_model=VoiceOptionsResponse)
+def list_tts_voices() -> dict[str, Any]:
+    return {"voices": list_voice_options()}
 
 
 @router.post("/jobs", response_model=JobResponse)
@@ -144,6 +152,16 @@ def identify_speakers(
 ) -> dict[str, Any]:
     try:
         return SpeakerService(config).identify_placeholder_speakers(job_id)
+    except Exception as exc:
+        raise _to_http_exception(exc) from exc
+
+
+@router.post("/jobs/{job_id}/asr", response_model=AsrResponse)
+def run_asr(
+    job_id: str, config: dict[str, Any] = Depends(get_config)
+) -> dict[str, Any]:
+    try:
+        return WorkflowService(config).run_job_asr(job_id)
     except Exception as exc:
         raise _to_http_exception(exc) from exc
 
@@ -306,7 +324,7 @@ def _build_workflow_overrides(
             if provider:
                 overrides["tts.provider"] = provider
             if "speaker_profiles" in tts_body:
-                overrides["tts.speaker_profiles"] = tts_body["speaker_profiles"]
+                overrides["tts.speaker_profiles"] = normalize_speaker_profiles(tts_body["speaker_profiles"])
                 overrides["tts.profiles_confirmed"] = True
             if "profiles_confirmed" in tts_body:
                 overrides["tts.profiles_confirmed"] = bool(tts_body["profiles_confirmed"])

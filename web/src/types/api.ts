@@ -72,6 +72,12 @@ export interface StepState {
 }
 
 export interface VoiceOption {
-  value: string;
+  voice_id: string;
   label: string;
+  original_label: string;
+  language: string;
+}
+
+export interface VoiceOptionsResponse {
+  voices: VoiceOption[];
 }

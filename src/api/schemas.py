@@ -68,6 +68,17 @@ class SpeakerResponse(BaseModel):
     segments: list[dict[str, Any]]
 
 
+class AsrResponse(BaseModel):
+    job_id: str
+    status: str
+    input_audio: str
+    raw_words: str
+    asr_report: str
+    provider: str | None = None
+    subtitle_count: int | None = None
+    speakers: list[str] = Field(default_factory=list)
+
+
 class PackageVideoRequest(BaseModel):
     output_filename: str = "final_en.mp4"
 
@@ -98,6 +109,17 @@ class LangGraphWorkflowResponse(BaseModel):
     report: str | None = None
     error: str | None = None
     hint: str | None = None
+
+
+class VoiceOptionEntry(BaseModel):
+    voice_id: str
+    label: str
+    original_label: str
+    language: str
+
+
+class VoiceOptionsResponse(BaseModel):
+    voices: list[VoiceOptionEntry]
 
 
 class HealthResponse(BaseModel):

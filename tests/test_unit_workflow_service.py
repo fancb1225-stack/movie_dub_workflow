@@ -54,7 +54,7 @@ class WorkflowServiceTests(unittest.TestCase):
             self.assertIn("final_srt", updated["artifacts"])
             self.assertIn("langgraph_workflow_report", updated["reports"])
 
-    def test_run_job_langgraph_workflow_requires_raw_srt(self) -> None:
+    def test_run_job_langgraph_workflow_requires_raw_asr(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = _config(temp_dir)
             job = _create_job(config, "job-2")
@@ -62,114 +62,90 @@ class WorkflowServiceTests(unittest.TestCase):
             report = WorkflowService(config).run_job_langgraph_workflow(job["job_id"])
 
             self.assertEqual(report["status"], "failed")
-            self.assertIn("预处理", report["hint"])
+            self.assertIn("ASR", report["hint"])
             updated = JobService(config).get_job(job["job_id"])
             self.assertEqual(updated["status"], "langgraph_failed")
 
-    def test_preprocess_streaming_forces_configured_job_asr_provider(self) -> None:
+    def test_run_job_asr_forces_configured_provider(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = _config(temp_dir, allow_mock_asr_for_jobs=False)
             config["workflow"]["force_job_asr_provider"] = "faster_whisper"
             config["asr"]["provider"] = "mock"
-            job = _create_job(config, "job-preprocess-asr-provider")
+            job = _create_job(config, "job-asr-provider")
             vocals_path = Path(job["paths"]["media_dir"]) / "separation" / "vocals.wav"
             _write_wav(vocals_path)
             captured_providers: list[str] = []
 
-            def fake_transcribe(input_audio: Path, output_srt: Path, job_config: dict[str, Any]) -> dict[str, Any]:
+            def fake_transcribe(input_audio: Path, output_words: Path, job_config: dict[str, Any]) -> dict[str, Any]:
                 captured_providers.append(job_config["asr"]["provider"])
                 srt_text = "1\n00:00:00,000 --> 00:00:01,000\n测试字幕\n"
                 return {
                     "provider": job_config["asr"]["provider"],
                     "input_mp3": str(input_audio),
-                    "output_srt": str(output_srt),
+                    "words_json": None,
                     "subtitle_count": 1,
                     "cues": [],
                     "srt": srt_text,
+                    "words": [],
+                    "speakers": [],
                 }
 
-            with (
-                patch(
-                    "src.services.workflow_service.MediaService.extract_audio_for_job",
-                    return_value={"status": "extracted"},
-                ),
-                patch(
-                    "src.services.workflow_service.SeparationService.separate_job_audio",
-                    return_value={"status": "success"},
-                ),
-                patch(
-                    "src.services.workflow_service.transcribe_mp3_to_srt",
-                    side_effect=fake_transcribe,
-                ),
+            with patch(
+                "src.services.workflow_service.transcribe_mp3_to_srt",
+                side_effect=fake_transcribe,
             ):
-                events = list(WorkflowService(config).run_job_preprocess_streaming(job["job_id"]))
+                report = WorkflowService(config).run_job_asr(job["job_id"])
 
-            self.assertEqual(events[-1]["event"], "done")
+            self.assertEqual(report["status"], "done")
             self.assertEqual(captured_providers, ["faster_whisper"])
+            updated = JobService(config).get_job(job["job_id"])
+            self.assertEqual(updated["status"], "asr_completed")
+            self.assertIn("raw_srt", updated["artifacts"])
 
-    def test_preprocess_streaming_rejects_mock_asr_when_not_allowed(self) -> None:
+    def test_run_job_asr_rejects_mock_when_not_allowed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = _config(temp_dir, allow_mock_asr_for_jobs=False)
             config["workflow"]["force_job_asr_provider"] = ""
             config["asr"]["provider"] = "mock"
-            job = _create_job(config, "job-preprocess-mock-blocked")
+            job = _create_job(config, "job-asr-mock-blocked")
             vocals_path = Path(job["paths"]["media_dir"]) / "separation" / "vocals.wav"
             _write_wav(vocals_path)
 
-            with (
-                patch(
-                    "src.services.workflow_service.MediaService.extract_audio_for_job",
-                    return_value={"status": "extracted"},
-                ),
-                patch(
-                    "src.services.workflow_service.SeparationService.separate_job_audio",
-                    return_value={"status": "success"},
-                ),
-                patch("src.services.workflow_service.transcribe_mp3_to_srt") as transcribe,
-            ):
-                events = list(WorkflowService(config).run_job_preprocess_streaming(job["job_id"]))
+            with patch("src.services.workflow_service.transcribe_mp3_to_srt") as transcribe:
+                with self.assertRaisesRegex(RuntimeError, "mock ASR"):
+                    WorkflowService(config).run_job_asr(job["job_id"])
 
-            self.assertEqual(events[-1]["event"], "error")
-            self.assertIn("mock ASR", events[-1]["error"])
             transcribe.assert_not_called()
 
-    def test_preprocess_streaming_allows_mock_asr_when_configured_for_tests(self) -> None:
+    def test_run_job_asr_allows_mock_when_configured_for_tests(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = _config(temp_dir, allow_mock_asr_for_jobs=True)
             config["workflow"]["force_job_asr_provider"] = ""
             config["asr"]["provider"] = "mock"
-            job = _create_job(config, "job-preprocess-mock-allowed")
+            job = _create_job(config, "job-asr-mock-allowed")
             vocals_path = Path(job["paths"]["media_dir"]) / "separation" / "vocals.wav"
             _write_wav(vocals_path)
 
-            def fake_transcribe(input_audio: Path, output_srt: Path, job_config: dict[str, Any]) -> dict[str, Any]:
+            def fake_transcribe(input_audio: Path, output_words: Path, job_config: dict[str, Any]) -> dict[str, Any]:
                 srt_text = "1\n00:00:00,000 --> 00:00:01,000\n测试字幕\n"
                 return {
                     "provider": job_config["asr"]["provider"],
                     "input_mp3": str(input_audio),
-                    "output_srt": str(output_srt),
+                    "words_json": None,
                     "subtitle_count": 1,
                     "cues": [],
                     "srt": srt_text,
+                    "words": [],
+                    "speakers": [],
                 }
 
-            with (
-                patch(
-                    "src.services.workflow_service.MediaService.extract_audio_for_job",
-                    return_value={"status": "extracted"},
-                ),
-                patch(
-                    "src.services.workflow_service.SeparationService.separate_job_audio",
-                    return_value={"status": "success"},
-                ),
-                patch(
-                    "src.services.workflow_service.transcribe_mp3_to_srt",
-                    side_effect=fake_transcribe,
-                ) as transcribe,
-            ):
-                events = list(WorkflowService(config).run_job_preprocess_streaming(job["job_id"]))
+            with patch(
+                "src.services.workflow_service.transcribe_mp3_to_srt",
+                side_effect=fake_transcribe,
+            ) as transcribe:
+                report = WorkflowService(config).run_job_asr(job["job_id"])
 
-            self.assertEqual(events[-1]["event"], "done")
+            self.assertEqual(report["status"], "done")
             self.assertEqual(transcribe.call_count, 1)
 
     def test_run_job_langgraph_workflow_handles_invoke_error(self) -> None:

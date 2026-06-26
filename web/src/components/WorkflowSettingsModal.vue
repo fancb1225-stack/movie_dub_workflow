@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from "vue";
-import { voiceOptions } from "../composables/useWorkflow";
-import type { WorkflowOverrides } from "../types/api";
+import type { VoiceOption, WorkflowOverrides } from "../types/api";
 
 const props = defineProps<{
   open: boolean;
   mode: "run" | "resume";
   initialOverrides: WorkflowOverrides;
   speakerProfiles: Record<string, string>;
+  voiceOptions: VoiceOption[];
 }>();
 
 const emit = defineEmits<{
@@ -80,7 +80,9 @@ function submit(): void {
         <label v-for="speaker in speakerKeys" :key="speaker">
           {{ speaker }}
           <select v-model="form.speaker_profiles[speaker]">
-            <option v-for="voice in voiceOptions" :key="voice.value" :value="voice.value">{{ voice.label }}</option>
+            <option v-for="voice in props.voiceOptions" :key="voice.voice_id" :value="voice.voice_id">
+              {{ voice.label }} / {{ voice.original_label }}
+            </option>
           </select>
         </label>
       </div>

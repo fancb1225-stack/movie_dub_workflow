@@ -1,4 +1,4 @@
-import type { Job, JobFilesResponse, JobListResponse, WorkflowEvent } from "../types/api";
+import type { Job, JobFilesResponse, JobListResponse, VoiceOptionsResponse, WorkflowEvent } from "../types/api";
 
 export function normalizeApiBase(value: string): string {
   return value.trim().replace(/\/+$/, "");
@@ -36,6 +36,10 @@ export function listJobs(apiBase: string): Promise<JobListResponse> {
 
 export function getJob(apiBase: string, jobId: string): Promise<Job> {
   return requestJson<Job>(apiBase, `/api/jobs/${encodeURIComponent(jobId)}`);
+}
+
+export function listTtsVoices(apiBase: string): Promise<VoiceOptionsResponse> {
+  return requestJson<VoiceOptionsResponse>(apiBase, "/api/tts/voices");
 }
 
 export function listJobFiles(apiBase: string, jobId: string): Promise<JobFilesResponse> {

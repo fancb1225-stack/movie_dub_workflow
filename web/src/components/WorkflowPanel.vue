@@ -11,6 +11,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   preprocess: [];
+  asr: [];
   speakers: [];
   run: [];
   resume: [];
@@ -26,6 +27,7 @@ const emit = defineEmits<{
     </div>
     <div class="workflow-actions">
       <button type="button" class="ghost icon-text" :disabled="props.disabled" @click="emit('preprocess')"><span>▶</span>预处理</button>
+      <button type="button" class="ghost icon-text" :disabled="props.disabled" @click="emit('asr')"><span>◎</span>ASR</button>
       <button type="button" class="ghost icon-text" :disabled="props.disabled" @click="emit('speakers')"><span>☷</span>说话人识别</button>
       <button type="button" class="primary icon-text" :disabled="props.disabled" @click="emit('run')"><span>▶</span>运行配音工作流</button>
       <button type="button" class="ghost icon-text" :disabled="props.disabled || !props.canResume" @click="emit('resume')"><span>↻</span>恢复工作流</button>
@@ -34,26 +36,6 @@ const emit = defineEmits<{
       <div v-for="step in [...props.preprocessSteps, ...props.workflowSteps]" :key="`timeline-${step.key}`" :class="['timeline-node', step.kind]">
         <span>{{ step.kind === "done" ? "✓" : step.kind === "running" ? "·" : step.kind === "error" ? "!" : "" }}</span>
         <strong>{{ step.label }}</strong>
-      </div>
-    </div>
-    <div class="workflow-grid">
-      <div>
-        <h3>预处理步骤</h3>
-        <div class="substeps">
-          <div v-for="step in props.preprocessSteps" :key="step.key" :class="['substep', step.kind]">
-            <span>{{ step.label }}</span>
-            <strong>{{ step.status }}</strong>
-          </div>
-        </div>
-      </div>
-      <div>
-        <h3>配音步骤</h3>
-        <div class="substeps">
-          <div v-for="step in props.workflowSteps" :key="step.key" :class="['substep', step.kind]">
-            <span>{{ step.label }}</span>
-            <strong>{{ step.status }}</strong>
-          </div>
-        </div>
       </div>
     </div>
     <div class="log-box">

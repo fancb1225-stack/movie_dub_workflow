@@ -1,31 +1,30 @@
 import { computed, ref, type Ref } from "vue";
-import { listJobFiles, requestJson, streamEvents } from "../api/client";
+import { listJobFiles, listTtsVoices, requestJson, streamEvents } from "../api/client";
 import type { Job, StepState, VoiceOption, WorkflowEvent, WorkflowOverrides } from "../types/api";
 
 const PREPROCESS_STEPS: StepState[] = [
   { key: "extract_audio", label: "音频提取", status: "等待", kind: "idle" },
-  { key: "separate_audio", label: "人声/背景分离", status: "等待", kind: "idle" },
-  { key: "background", label: "背景音提取", status: "等待", kind: "idle" },
-  { key: "speakers", label: "说话人识别", status: "等待", kind: "idle" }
+  { key: "separate_audio", label: "人声/背景分离", status: "等待", kind: "idle" }
 ];
 
 const WORKFLOW_STEPS: StepState[] = [
   { key: "asr", label: "ASR", status: "等待", kind: "idle" },
-  { key: "clean_srt", label: "清洗字幕", status: "等待", kind: "idle" },
+  { key: "speakers", label: "说话人识别", status: "等待", kind: "idle" },
   { key: "merge", label: "合并", status: "等待", kind: "idle" },
+  { key: "clean_srt", label: "清洗字幕", status: "等待", kind: "idle" },
   { key: "critic", label: "校对", status: "等待", kind: "idle" },
   { key: "translate", label: "翻译", status: "等待", kind: "idle" },
   { key: "tts", label: "TTS", status: "等待", kind: "idle" },
   { key: "audio", label: "音频合成", status: "等待", kind: "idle" }
 ];
 
-export const voiceOptions: VoiceOption[] = [
-  { value: "Wise_Woman", label: "Wise Woman" },
-  { value: "Friendly_Person", label: "Friendly Person" },
-  { value: "Inspirational_girl", label: "Inspirational Girl" },
-  { value: "Deep_Voice_Man", label: "Deep Voice Man" },
-  { value: "Calm_Woman", label: "Calm Woman" },
-  { value: "default", label: "Default" }
+const DEFAULT_VOICE_OPTIONS: VoiceOption[] = [
+  { voice_id: "Wise_Woman", label: "智慧女声", original_label: "Wise Woman", language: "英文" },
+  { voice_id: "Friendly_Person", label: "友好人物", original_label: "Friendly Person", language: "英文" },
+  { voice_id: "Inspirational_girl", label: "励志女孩", original_label: "Inspirational Girl", language: "英文" },
+  { voice_id: "Deep_Voice_Man", label: "低沉男声", original_label: "Deep Voice Man", language: "英文" },
+  { voice_id: "Calm_Woman", label: "沉稳女声", original_label: "Calm Woman", language: "英文" },
+  { voice_id: "default", label: "默认音色", original_label: "Default", language: "默认" }
 ];
 
 function cloneSteps(steps: StepState[]): StepState[] {
@@ -43,7 +42,9 @@ export function useWorkflow(
   const preprocessSteps = ref<StepState[]>(cloneSteps(PREPROCESS_STEPS));
   const workflowSteps = ref<StepState[]>(cloneSteps(WORKFLOW_STEPS));
   const logLines = ref<string[]>([]);
+  const voiceOptions = ref<VoiceOption[]>(DEFAULT_VOICE_OPTIONS);
   const running = ref(false);
+  const operationStartedAt = ref<number | null>(null);
   const settingsOpen = ref(false);
   const settingsMode = ref<"run" | "resume">("run");
   const speakerProfiles = ref<Record<string, string>>({ default: "Wise_Woman" });
@@ -64,17 +65,47 @@ export function useWorkflow(
 
   function appendLog(text: string): void {
     const stamp = new Date().toLocaleTimeString();
-    logLines.value = [`[${stamp}] ${text}`, ...logLines.value].slice(0, 160);
+    const elapsed = operationStartedAt.value === null ? "" : ` +${formatElapsed(Date.now() - operationStartedAt.value)}`;
+    logLines.value = [`[${stamp}${elapsed}] ${text}`, ...logLines.value].slice(0, 160);
+  }
+
+  function startTiming(): void {
+    operationStartedAt.value = Date.now();
+  }
+
+  function formatElapsed(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    const seconds = ms / 1000;
+    if (seconds < 60) return `${seconds.toFixed(1)}s`;
+    const minutes = Math.floor(seconds / 60);
+    const rest = Math.round(seconds % 60).toString().padStart(2, "0");
+    return `${minutes}m${rest}s`;
   }
 
   function clearLog(): void {
     logLines.value = [];
   }
 
+  function resolveStepIndex(target: Ref<StepState[]>, event: WorkflowEvent): number {
+    const node = String(event.node || event.event || "");
+    if (!node) return -1;
+    const aliases: Record<string, string> = {
+      asr_transcribe: "asr",
+      merge_zh_asr_srt: "merge",
+      restitch_merge_cuts: "merge",
+      critic_srt: "critic",
+      summarize_plot: "critic",
+      translate_to_english: "translate",
+      tts_generate_and_detect: "tts",
+      reflect_duration_issues: "tts",
+      align_and_merge_audio: "audio"
+    };
+    const normalized = aliases[node] || node;
+    return target.value.findIndex((step) => step.key === normalized || normalized.includes(step.key));
+  }
+
   function updateStep(target: Ref<StepState[]>, event: WorkflowEvent): void {
-    const key = String(event.node || event.event || "");
-    if (!key) return;
-    const index = target.value.findIndex((step) => key.includes(step.key) || step.key.includes(key));
+    const index = resolveStepIndex(target, event);
     if (index < 0) return;
     const next = [...target.value];
     const kind = event.event === "error" || event.status === "error" ? "error" : event.event === "done" || event.status === "done" ? "done" : "running";
@@ -107,15 +138,13 @@ export function useWorkflow(
     if (!job.value) return;
     running.value = true;
     resetSteps(preprocessSteps, PREPROCESS_STEPS);
+    startTiming();
     preprocessSteps.value[0] = { ...preprocessSteps.value[0], kind: "running", status: "执行中" };
     try {
       await streamEvents(apiBase.value, `/api/jobs/${job.value.job_id}/preprocess/stream`, { method: "POST" }, (event) => {
         handleStreamEvent(preprocessSteps, event);
       });
-      preprocessSteps.value = preprocessSteps.value.map((step) => {
-        if (step.key === "speakers" && step.kind === "idle") return step;
-        return { ...step, kind: step.kind === "error" ? "error" : "done", status: step.kind === "error" ? step.status : "完成" };
-      });
+      preprocessSteps.value = preprocessSteps.value.map((step) => ({ ...step, kind: step.kind === "error" ? "error" : "done", status: step.kind === "error" ? step.status : "完成" }));
       setMessage("预处理完成", "ok");
       await refreshJob();
       await refreshFiles();
@@ -124,22 +153,61 @@ export function useWorkflow(
     }
   }
 
+  async function runAsr(): Promise<void> {
+    if (!job.value) return;
+    running.value = true;
+    startTiming();
+    const index = workflowSteps.value.findIndex((step) => step.key === "asr");
+    if (index >= 0) {
+      const next = [...workflowSteps.value];
+      next[index] = { ...next[index], kind: "running", status: "执行中" };
+      workflowSteps.value = next;
+    }
+    try {
+      const data = await requestJson<WorkflowEvent>(apiBase.value, `/api/jobs/${job.value.job_id}/asr`, { method: "POST" });
+      const next = [...workflowSteps.value];
+      const asrIndex = next.findIndex((step) => step.key === "asr");
+      if (asrIndex >= 0) {
+        next[asrIndex] = { ...next[asrIndex], kind: "done", status: "完成" };
+        workflowSteps.value = next;
+      }
+      appendLog("ASR 语音识别完成");
+      setMessage("ASR 语音识别完成", "ok");
+      setOutput(data);
+      await refreshJob();
+      await refreshFiles();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const next = [...workflowSteps.value];
+      const asrIndex = next.findIndex((step) => step.key === "asr");
+      if (asrIndex >= 0) {
+        next[asrIndex] = { ...next[asrIndex], kind: "error", status: "失败" };
+        workflowSteps.value = next;
+      }
+      appendLog(message);
+      throw error;
+    } finally {
+      running.value = false;
+    }
+  }
+
   async function runSpeakerIdentify(): Promise<void> {
     if (!job.value) return;
     running.value = true;
-    const index = preprocessSteps.value.findIndex((step) => step.key === "speakers");
+    startTiming();
+    const index = workflowSteps.value.findIndex((step) => step.key === "speakers");
     if (index >= 0) {
-      const next = [...preprocessSteps.value];
+      const next = [...workflowSteps.value];
       next[index] = { ...next[index], kind: "running", status: "执行中" };
-      preprocessSteps.value = next;
+      workflowSteps.value = next;
     }
     try {
       const data = await requestJson<WorkflowEvent>(apiBase.value, `/api/jobs/${job.value.job_id}/speakers/identify`, { method: "POST" });
-      const next = [...preprocessSteps.value];
+      const next = [...workflowSteps.value];
       const speakerIndex = next.findIndex((step) => step.key === "speakers");
       if (speakerIndex >= 0) {
         next[speakerIndex] = { ...next[speakerIndex], kind: "done", status: "完成" };
-        preprocessSteps.value = next;
+        workflowSteps.value = next;
       }
       appendLog("说话人识别完成");
       setMessage("说话人识别完成", "ok");
@@ -148,11 +216,11 @@ export function useWorkflow(
       await refreshFiles();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const next = [...preprocessSteps.value];
+      const next = [...workflowSteps.value];
       const speakerIndex = next.findIndex((step) => step.key === "speakers");
       if (speakerIndex >= 0) {
         next[speakerIndex] = { ...next[speakerIndex], kind: "error", status: "失败" };
-        preprocessSteps.value = next;
+        workflowSteps.value = next;
       }
       appendLog(message);
       throw error;
@@ -168,6 +236,17 @@ export function useWorkflow(
 
   function closeSettings(): void {
     settingsOpen.value = false;
+  }
+
+  async function loadVoiceOptions(): Promise<void> {
+    try {
+      const data = await listTtsVoices(apiBase.value);
+      if (data.voices.length) {
+        voiceOptions.value = data.voices;
+      }
+    } catch (error) {
+      appendLog(`音色列表加载失败，使用本地兜底列表：${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function submitSettings(value: WorkflowOverrides): Promise<void> {
@@ -250,11 +329,13 @@ export function useWorkflow(
     canResume,
     voiceOptions,
     runPreprocess,
+    runAsr,
     runSpeakerIdentify,
     clearLog,
     openSettings,
     closeSettings,
     submitSettings,
-    loadSpeakerProfiles
+    loadSpeakerProfiles,
+    loadVoiceOptions
   };
 }
