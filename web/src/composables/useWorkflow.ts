@@ -120,16 +120,40 @@ export function useWorkflow(
     target.value = next;
   }
 
+  function eventErrorMessage(event: WorkflowEvent): string {
+    if (event.error) return String(event.error);
+    const report = event.report;
+    if (typeof report === "object" && report && "error" in report) {
+      return String((report as { error?: unknown }).error || "流程执行失败");
+    }
+    return event.event === "error" ? "流程执行失败" : "";
+  }
+
+  function markActiveStepError(target: Ref<StepState[]>, message: string): void {
+    const next = [...target.value];
+    let index = next.findIndex((step) => step.kind === "running");
+    if (index < 0 && /tts|语音|合成|timeout|超时/i.test(message)) {
+      index = next.findIndex((step) => step.key === "tts");
+    }
+    if (index < 0) return;
+    next[index] = { ...next[index], kind: "error", status: "失败" };
+    target.value = next;
+  }
+
   function handleStreamEvent(target: Ref<StepState[]>, event: WorkflowEvent): void {
     if (event.job) {
       job.value = event.job;
     }
-    if (event.error) {
-      appendLog(event.error);
-      setMessage(event.error, "error");
-    } else {
-      appendLog(event.message || event.label || event.event || "收到事件");
+    const errorMessage = eventErrorMessage(event);
+    if (errorMessage) {
+      appendLog(errorMessage);
+      setMessage(errorMessage, "error");
+      updateStep(target, event);
+      markActiveStepError(target, errorMessage);
+      setOutput(event);
+      throw new Error(errorMessage);
     }
+    appendLog(event.message || event.label || event.event || "收到事件");
     updateStep(target, event);
     setOutput(event);
   }
