@@ -11,6 +11,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   preprocess: [];
+  speakers: [];
   run: [];
   resume: [];
 }>();
@@ -24,6 +25,7 @@ const emit = defineEmits<{
     </div>
     <div class="workflow-actions">
       <button type="button" class="ghost icon-text" :disabled="props.disabled" @click="emit('preprocess')"><span>▶</span>预处理</button>
+      <button type="button" class="ghost icon-text" :disabled="props.disabled" @click="emit('speakers')"><span>☷</span>说话人识别</button>
       <button type="button" class="primary icon-text" :disabled="props.disabled" @click="emit('run')"><span>▶</span>运行配音工作流</button>
       <button type="button" class="ghost icon-text" :disabled="props.disabled || !props.canResume" @click="emit('resume')"><span>↻</span>恢复工作流</button>
     </div>

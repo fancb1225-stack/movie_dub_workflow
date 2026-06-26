@@ -5,7 +5,8 @@ import type { Job, StepState, VoiceOption, WorkflowEvent, WorkflowOverrides } fr
 const PREPROCESS_STEPS: StepState[] = [
   { key: "extract_audio", label: "音频提取", status: "等待", kind: "idle" },
   { key: "separate_audio", label: "人声/背景分离", status: "等待", kind: "idle" },
-  { key: "background", label: "背景音提取", status: "等待", kind: "idle" }
+  { key: "background", label: "背景音提取", status: "等待", kind: "idle" },
+  { key: "speakers", label: "说话人识别", status: "等待", kind: "idle" }
 ];
 
 const WORKFLOW_STEPS: StepState[] = [
@@ -107,10 +108,50 @@ export function useWorkflow(
       await streamEvents(apiBase.value, `/api/jobs/${job.value.job_id}/preprocess/stream`, { method: "POST" }, (event) => {
         handleStreamEvent(preprocessSteps, event);
       });
-      preprocessSteps.value = preprocessSteps.value.map((step) => ({ ...step, kind: step.kind === "error" ? "error" : "done", status: step.kind === "error" ? step.status : "完成" }));
+      preprocessSteps.value = preprocessSteps.value.map((step) => {
+        if (step.key === "speakers" && step.kind === "idle") return step;
+        return { ...step, kind: step.kind === "error" ? "error" : "done", status: step.kind === "error" ? step.status : "完成" };
+      });
       setMessage("预处理完成", "ok");
       await refreshJob();
       await refreshFiles();
+    } finally {
+      running.value = false;
+    }
+  }
+
+  async function runSpeakerIdentify(): Promise<void> {
+    if (!job.value) return;
+    running.value = true;
+    const index = preprocessSteps.value.findIndex((step) => step.key === "speakers");
+    if (index >= 0) {
+      const next = [...preprocessSteps.value];
+      next[index] = { ...next[index], kind: "running", status: "执行中" };
+      preprocessSteps.value = next;
+    }
+    try {
+      const data = await requestJson<WorkflowEvent>(apiBase.value, `/api/jobs/${job.value.job_id}/speakers/identify`, { method: "POST" });
+      const next = [...preprocessSteps.value];
+      const speakerIndex = next.findIndex((step) => step.key === "speakers");
+      if (speakerIndex >= 0) {
+        next[speakerIndex] = { ...next[speakerIndex], kind: "done", status: "完成" };
+        preprocessSteps.value = next;
+      }
+      appendLog("说话人识别完成");
+      setMessage("说话人识别完成", "ok");
+      setOutput(data);
+      await refreshJob();
+      await refreshFiles();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const next = [...preprocessSteps.value];
+      const speakerIndex = next.findIndex((step) => step.key === "speakers");
+      if (speakerIndex >= 0) {
+        next[speakerIndex] = { ...next[speakerIndex], kind: "error", status: "失败" };
+        preprocessSteps.value = next;
+      }
+      appendLog(message);
+      throw error;
     } finally {
       running.value = false;
     }
@@ -205,6 +246,7 @@ export function useWorkflow(
     canResume,
     voiceOptions,
     runPreprocess,
+    runSpeakerIdentify,
     openSettings,
     closeSettings,
     submitSettings,

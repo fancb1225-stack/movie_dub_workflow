@@ -26,7 +26,7 @@ const emit = defineEmits<{
       <dt>状态</dt>
       <dd><span class="status-chip">{{ props.job.status || "未知" }}</span></dd>
       <dt>源文件</dt>
-      <dd>{{ props.job.source_filename || "-" }}</dd>
+      <dd>{{ props.job.original_filename || props.job.source_filename || "-" }}</dd>
       <dt>目录</dt>
       <dd>{{ props.job.workdir || "-" }}</dd>
     </dl>

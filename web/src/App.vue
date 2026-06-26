@@ -94,6 +94,7 @@ async function submitWorkflowSettings(value: WorkflowOverrides): Promise<void> {
           :workflow-steps="workflow.workflowSteps.value"
           :log-lines="workflow.logLines.value"
           @preprocess="runSafely(workflow.runPreprocess)"
+          @speakers="runSafely(workflow.runSpeakerIdentify)"
           @run="openWorkflowSettings('run')"
           @resume="openWorkflowSettings('resume')"
         />

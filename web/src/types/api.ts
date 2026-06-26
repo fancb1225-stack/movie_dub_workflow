@@ -5,6 +5,7 @@ export interface Job {
   status?: string;
   workdir?: string;
   source_filename?: string;
+  original_filename?: string;
   video_type?: string;
   created_at?: string;
   updated_at?: string;

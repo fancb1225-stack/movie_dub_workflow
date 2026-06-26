@@ -8,7 +8,7 @@ const emit = defineEmits<{
 }>();
 
 const selectedFile = ref<File | null>(null);
-const videoType = ref("movie");
+const videoType = ref("movie_commentary");
 
 function submit(): void {
   if (!selectedFile.value) return;
@@ -31,9 +31,8 @@ function submit(): void {
     <div class="inline-form">
       <label for="videoType">内容类型</label>
       <select id="videoType" v-model="videoType">
-        <option value="movie">电影/短片</option>
-        <option value="commentary">解说</option>
-        <option value="general">通用</option>
+        <option value="movie_commentary">电影解说</option>
+        <option value="manju">漫剧</option>
       </select>
     </div>
     <button type="button" class="primary full-width" :disabled="busy || !selectedFile" @click="submit">创建 Job</button>
