@@ -1,22 +1,12 @@
 import { computed, ref, type Ref } from "vue";
 import { listJobFiles, listTtsVoices, requestJson, streamEvents } from "../api/client";
 import type { Job, StepState, VoiceOption, WorkflowEvent, WorkflowOverrides } from "../types/api";
-
-const PREPROCESS_STEPS: StepState[] = [
-  { key: "extract_audio", label: "音频提取", status: "等待", kind: "idle" },
-  { key: "separate_audio", label: "人声/背景分离", status: "等待", kind: "idle" }
-];
-
-const WORKFLOW_STEPS: StepState[] = [
-  { key: "asr", label: "ASR", status: "等待", kind: "idle" },
-  { key: "speakers", label: "说话人识别", status: "等待", kind: "idle" },
-  { key: "merge", label: "合并", status: "等待", kind: "idle" },
-  { key: "clean_srt", label: "清洗字幕", status: "等待", kind: "idle" },
-  { key: "critic", label: "校对", status: "等待", kind: "idle" },
-  { key: "translate", label: "翻译", status: "等待", kind: "idle" },
-  { key: "tts", label: "TTS", status: "等待", kind: "idle" },
-  { key: "audio", label: "音频合成", status: "等待", kind: "idle" }
-];
+import {
+  cloneSteps,
+  initialLanggraphSteps,
+  preprocessStepsTemplate,
+  workflowStepsTemplate
+} from "./workflowSteps";
 
 const DEFAULT_VOICE_OPTIONS: VoiceOption[] = [
   { voice_id: "Wise_Woman", label: "智慧女声", original_label: "Wise Woman", language: "英文" },
@@ -27,10 +17,6 @@ const DEFAULT_VOICE_OPTIONS: VoiceOption[] = [
   { voice_id: "default", label: "默认音色", original_label: "Default", language: "默认" }
 ];
 
-function cloneSteps(steps: StepState[]): StepState[] {
-  return steps.map((step) => ({ ...step }));
-}
-
 export function useWorkflow(
   apiBase: Ref<string>,
   job: Ref<Job | null>,
@@ -39,8 +25,8 @@ export function useWorkflow(
   refreshJob: () => Promise<void>,
   refreshFiles: () => Promise<void>
 ) {
-  const preprocessSteps = ref<StepState[]>(cloneSteps(PREPROCESS_STEPS));
-  const workflowSteps = ref<StepState[]>(cloneSteps(WORKFLOW_STEPS));
+  const preprocessSteps = ref<StepState[]>(cloneSteps(preprocessStepsTemplate));
+  const workflowSteps = ref<StepState[]>(cloneSteps(workflowStepsTemplate));
   const logLines = ref<string[]>([]);
   const voiceOptions = ref<VoiceOption[]>(DEFAULT_VOICE_OPTIONS);
   const running = ref(false);
@@ -161,7 +147,7 @@ export function useWorkflow(
   async function runPreprocess(): Promise<void> {
     if (!job.value) return;
     running.value = true;
-    resetSteps(preprocessSteps, PREPROCESS_STEPS);
+    resetSteps(preprocessSteps, preprocessStepsTemplate);
     startTiming();
     preprocessSteps.value[0] = { ...preprocessSteps.value[0], kind: "running", status: "执行中" };
     try {
@@ -287,8 +273,7 @@ export function useWorkflow(
   async function runLanggraph(isResume: boolean): Promise<void> {
     if (!job.value) return;
     running.value = true;
-    resetSteps(workflowSteps, WORKFLOW_STEPS);
-    workflowSteps.value[0] = { ...workflowSteps.value[0], kind: "running", status: "执行中" };
+    workflowSteps.value = initialLanggraphSteps(workflowStepsTemplate);
     const params = new URLSearchParams({
       max_reflection_rounds: String(overrides.value.max_reflection_rounds),
       llm_timeout: String(overrides.value.llm_timeout),
