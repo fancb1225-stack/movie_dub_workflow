@@ -15,6 +15,7 @@ from src.services.workflow_service import (
     _job_workflow_config,
     _workflow_hint,
 )
+from src.tools.tts_tools import FatalTtsError
 
 
 class WorkflowServiceTests(unittest.TestCase):
@@ -250,6 +251,34 @@ class WorkflowServiceTests(unittest.TestCase):
             self.assertIn("LLM 服务拒绝访问", report["hint"])
             updated = JobService(config).get_job(job["job_id"])
             self.assertEqual(updated["status"], "langgraph_failed")
+
+    def test_streaming_workflow_tts_fatal_error_targets_tts_node(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = _config(temp_dir)
+            job = _create_job(config, "job-tts-fatal-stream")
+            asr_dir = Path(job["paths"]["job_dir"]) / "workflow" / "asr"
+            asr_dir.mkdir(parents=True, exist_ok=True)
+            raw_srt_path = asr_dir / "zh_raw.srt"
+            raw_srt_path.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\n测试\n", encoding="utf-8"
+            )
+            JobService(config).update_job(job["job_id"], artifacts={"raw_srt": str(raw_srt_path)})
+
+            class FailingStreamWorkflow:
+                def stream(self, state: dict[str, Any]):
+                    raise FatalTtsError("MiniMax TTS task timeout: task_id=task-1")
+
+            with patch("src.services.workflow_service.build_workflow", return_value=FailingStreamWorkflow()):
+                events = list(WorkflowService(config).run_job_langgraph_workflow_streaming(job["job_id"]))
+
+            error_event = events[-1]
+            self.assertEqual(error_event["event"], "error")
+            self.assertEqual(error_event["node"], "tts_generate_and_detect")
+            self.assertEqual(error_event["status"], "error")
+            self.assertIn("MiniMax TTS task timeout", error_event["message"])
+            updated = JobService(config).get_job(job["job_id"])
+            self.assertEqual(updated["status"], "langgraph_failed")
+            self.assertEqual(updated["langgraph_progress"]["node"], "tts_generate_and_detect")
 
     def test_workflow_hint_explains_cuda_dependency_error(self) -> None:
         hint = _workflow_hint("Library cublas64_12.dll is not found or cannot be loaded")

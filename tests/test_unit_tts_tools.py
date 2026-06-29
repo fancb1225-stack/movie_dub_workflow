@@ -14,6 +14,7 @@ from src.tools.tts_tools import (
     _minimax_request_json,
     generate_tts_segments,
 )
+from src.nodes.tts_duration_node import tts_generate_and_detect
 
 
 class TtsToolsTests(unittest.TestCase):
@@ -219,6 +220,78 @@ class TtsToolsTests(unittest.TestCase):
                     )
 
         self.assertEqual(minimax.call_count, 1)
+
+    def test_minimax_task_timeout_raises_fatal_tts_error(self) -> None:
+        calls = []
+
+        def fake_request(method, url, api_key, payload, timeout, max_retries):
+            calls.append(method)
+            if method == "POST":
+                return {"task_id": "task-timeout"}
+            return {"status": "PROCESSING"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"LLM_API_KEY": "key-1", "TTS_MODEL": "speech-01"}, clear=False), \
+                patch("src.tools.tts_tools._minimax_request_json", side_effect=fake_request):
+                with self.assertRaisesRegex(FatalTtsError, "MiniMax TTS task timeout"):
+                    _generate_minimax_tts(
+                        "hello",
+                        Path(tmp) / "segment.mp3",
+                        {
+                            "minimax": {
+                                "base_url": "https://token.cxtfun.com",
+                                "create_path": "/v1/minimax/tts/async",
+                                "query_path": "/v1/minimax/tts/tasks/{task_id}",
+                                "task_timeout": 0.001,
+                                "poll_interval": 0.001,
+                            },
+                            "sample_rate": 24000,
+                        },
+                        {"voice_id": "voice-a", "speed": 1.1},
+                    )
+
+        self.assertIn("POST", calls)
+        self.assertIn("GET", calls)
+
+    def test_tts_node_raises_fatal_error_when_any_segment_failed(self) -> None:
+        cue = {
+            "index": 1,
+            "start": "00:00:00,000",
+            "end": "00:00:01,000",
+            "start_ms": 0,
+            "end_ms": 1000,
+            "text": "hello",
+        }
+        failed_segment = {
+            **cue,
+            "path": "missing.mp3",
+            "duration_ms": 0,
+            "success": False,
+            "error": "MiniMax TTS task timeout: task_id=task-1",
+            "provider": "minimax",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_dir = Path(tmp) / "reports"
+            with patch("src.nodes.tts_duration_node.generate_tts_segments", return_value=[failed_segment]):
+                with self.assertRaisesRegex(FatalTtsError, "failed 1/1.*MiniMax TTS task timeout"):
+                    tts_generate_and_detect(
+                        {
+                            "config": {
+                                "project_root": tmp,
+                                "paths": {
+                                    "tts_segments_dir": "tts_segments",
+                                    "reports_dir": "reports",
+                                },
+                                "duration": {"max_overrun_ms": 350, "max_ratio": 1.12},
+                            },
+                            "final_cues": [cue],
+                            "corrected_cues": [],
+                            "reports": {},
+                        }
+                    )
+
+            self.assertTrue((report_dir / "tts_duration_report.json").exists())
 
     def test_generate_segments_uses_configured_concurrency(self) -> None:
         cues = [

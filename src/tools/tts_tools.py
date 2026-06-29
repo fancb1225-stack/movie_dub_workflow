@@ -26,6 +26,24 @@ class FatalTtsError(RuntimeError):
     """Unrecoverable TTS configuration or provider error."""
 
 
+def is_fatal_tts_error(exc_or_message: Exception | str) -> bool:
+    message = str(exc_or_message).lower()
+    fatal_markers = (
+        "access_denied",
+        "http 401",
+        "http 403",
+        "ip whitelist",
+        "ip white list",
+        "ip is not allowed",
+        "not in the user allowed access list",
+        "not in user allowed access list",
+        "不在用户允许访问",
+        "允许访问的列表",
+        "minimax tts task timeout",
+    )
+    return any(marker in message for marker in fatal_markers)
+
+
 def generate_tts_segments(
     cues: list[SrtCue],
     output_dir: str | Path,
@@ -102,6 +120,9 @@ def _generate_one_tts_segment(
         logger.error("TTS segment %d FATAL:\n%s", cue["index"], traceback.format_exc())
         raise
     except Exception as exc:
+        if is_fatal_tts_error(exc):
+            logger.error("TTS segment %d FATAL:\n%s", cue["index"], traceback.format_exc())
+            raise FatalTtsError(str(exc)) from exc
         logger.error(
             "TTS segment %d FAILED: %s\n%s",
             cue["index"],
@@ -362,7 +383,7 @@ def _generate_minimax_tts(
             raise RuntimeError(f"MiniMax TTS task failed: task_id={task_id}, status={status}")
         time.sleep(max(0.5, poll_interval))
     else:
-        raise RuntimeError(f"MiniMax TTS task timeout: task_id={task_id}")
+        raise FatalTtsError(f"MiniMax TTS task timeout: task_id={task_id}")
 
     download_url = _find_first(task_result, {"result_url", "audio_url", "download_url", "file_url", "url", "output_url"})
     if not download_url and file_path:

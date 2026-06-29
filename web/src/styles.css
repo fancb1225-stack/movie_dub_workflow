@@ -620,6 +620,15 @@ main {
   font-weight: 760;
 }
 
+.timeline-node small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.25;
+  max-width: 96px;
+  overflow-wrap: anywhere;
+}
+
 .timeline-node.done span,
 .timeline-node.running span {
   background: var(--ok);
@@ -637,6 +646,11 @@ main {
   background: var(--danger);
   border-color: var(--danger);
   color: #fff;
+}
+
+.timeline-node.error small {
+  color: var(--danger);
+  font-weight: 760;
 }
 
 .workflow-grid {

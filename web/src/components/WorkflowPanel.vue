@@ -36,6 +36,7 @@ const emit = defineEmits<{
       <div v-for="step in [...props.preprocessSteps, ...props.workflowSteps]" :key="`timeline-${step.key}`" :class="['timeline-node', step.kind]">
         <span>{{ step.kind === "done" ? "✓" : step.kind === "running" ? "·" : step.kind === "error" ? "!" : "" }}</span>
         <strong>{{ step.label }}</strong>
+        <small>{{ step.status }}</small>
       </div>
     </div>
     <div class="log-box">

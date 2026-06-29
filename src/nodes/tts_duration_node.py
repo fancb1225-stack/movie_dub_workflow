@@ -6,7 +6,7 @@ from src.config import config_path
 from src.state import WorkflowState
 from src.tools.duration_tools import build_tts_duration_report, detect_duration_issues
 from src.tools.file_tools import write_json
-from src.tools.tts_tools import generate_tts_segments
+from src.tools.tts_tools import FatalTtsError, generate_tts_segments
 from src.workflow_pause import WorkflowPauseRequired
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,16 @@ def tts_generate_and_detect(state: WorkflowState) -> WorkflowState:
                 report["success_segments"], report["failed_segments"], report["duration_issue_count"])
     if report["failed_segments"] > 0:
         logger.warning("Failed TTS segments: %s", report.get("failed_errors", []))
+        failed_errors = report.get("failed_errors", [])
+        first_error = "unknown"
+        if isinstance(failed_errors, list) and failed_errors:
+            first = failed_errors[0]
+            if isinstance(first, dict):
+                first_error = str(first.get("error") or first_error)
+        raise FatalTtsError(
+            f"TTS failed {report['failed_segments']}/{report['total_segments']} segments: "
+            f"{first_error}; report={report_path}"
+        )
     state["tts_segments"] = segments
     state["duration_issues"] = issues
     state.setdefault("reports", {})["tts_duration_report"] = str(report_path)
@@ -62,4 +72,3 @@ def _pause_if_speaker_profiles_missing(state: WorkflowState, cues: list) -> None
                 "missing_speakers": missing,
             },
         )
-

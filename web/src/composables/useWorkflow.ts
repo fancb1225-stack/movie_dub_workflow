@@ -2,6 +2,7 @@ import { computed, ref, type Ref } from "vue";
 import { listJobFiles, listTtsVoices, requestJson, streamEvents } from "../api/client";
 import type { Job, StepState, VoiceOption, WorkflowEvent, WorkflowOverrides } from "../types/api";
 import {
+  applyWorkflowEventToSteps,
   cloneSteps,
   initialLanggraphSteps,
   preprocessStepsTemplate,
@@ -72,38 +73,8 @@ export function useWorkflow(
     logLines.value = [];
   }
 
-  function resolveStepIndex(target: Ref<StepState[]>, event: WorkflowEvent): number {
-    const node = String(event.node || event.event || "");
-    if (!node) return -1;
-    const aliases: Record<string, string> = {
-      asr_transcribe: "asr",
-      merge_zh_asr_srt: "merge",
-      restitch_merge_cuts: "merge",
-      critic_srt: "critic",
-      summarize_plot: "critic",
-      translate_to_english: "translate",
-      tts_generate_and_detect: "tts",
-      reflect_duration_issues: "tts",
-      align_and_merge_audio: "audio"
-    };
-    const normalized = aliases[node] || node;
-    return target.value.findIndex((step) => step.key === normalized || normalized.includes(step.key));
-  }
-
   function updateStep(target: Ref<StepState[]>, event: WorkflowEvent): void {
-    const index = resolveStepIndex(target, event);
-    if (index < 0) return;
-    const next = [...target.value];
-    const kind = event.event === "error" || event.status === "error" ? "error" : event.event === "done" || event.status === "done" ? "done" : "running";
-    next[index] = {
-      ...next[index],
-      kind,
-      status: event.status || event.label || event.message || (kind === "done" ? "完成" : kind === "error" ? "失败" : "执行中")
-    };
-    if (kind === "done" && next[index + 1]?.kind === "idle") {
-      next[index + 1] = { ...next[index + 1], kind: "running", status: "执行中" };
-    }
-    target.value = next;
+    target.value = applyWorkflowEventToSteps(target.value, event);
   }
 
   function eventErrorMessage(event: WorkflowEvent): string {
@@ -122,7 +93,7 @@ export function useWorkflow(
       index = next.findIndex((step) => step.key === "tts");
     }
     if (index < 0) return;
-    next[index] = { ...next[index], kind: "error", status: "失败" };
+    next[index] = { ...next[index], kind: "error", status: message || "失败" };
     target.value = next;
   }
 

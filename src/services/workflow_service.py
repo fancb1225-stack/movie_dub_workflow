@@ -20,6 +20,7 @@ from src.state import WorkflowState
 from src.tools.asr_tools import transcribe_mp3_to_srt, write_asr_report
 from src.tools.asr_words import cues_from_asr_words_file
 from src.tools.file_tools import ensure_dir, write_json
+from src.tools.tts_tools import FatalTtsError
 from src.tools.srt_tools import parse_srt
 from src.video_types import (
     DEFAULT_VIDEO_TYPE,
@@ -245,13 +246,14 @@ class WorkflowService:
                 report_path,
                 workflow_dir=_workflow_dir_from_config(job_config),
             )
+            progress = _workflow_error_progress(exc, report)
             self.jobs.update_job(
                 job_id,
                 status="langgraph_failed",
                 reports={"langgraph_workflow_report": str(report_path)},
-                extra={"langgraph_workflow_report": report, "langgraph_progress": {"event": "error", "report": report}},
+                extra={"langgraph_workflow_report": report, "langgraph_progress": progress},
             )
-            yield {"event": "error", "report": report}
+            yield progress
 
     def resume_job_langgraph_workflow_streaming(self, job_id: str, overrides: dict[str, Any] | None = None):
         """Resume a failed workflow from the last completed node."""
@@ -369,13 +371,14 @@ class WorkflowService:
                 report_path,
                 workflow_dir=_workflow_dir_from_config(job_config),
             )
+            progress = _workflow_error_progress(exc, report)
             self.jobs.update_job(
                 job_id,
                 status="langgraph_failed",
                 reports={"langgraph_workflow_report": str(report_path)},
-                extra={"langgraph_workflow_report": report, "langgraph_progress": {"event": "error", "report": report}},
+                extra={"langgraph_workflow_report": report, "langgraph_progress": progress},
             )
-            yield {"event": "error", "report": report}
+            yield progress
 
 
 def _progress_event(node_name: str, state: WorkflowState) -> dict[str, Any]:
@@ -392,6 +395,20 @@ def _progress_event(node_name: str, state: WorkflowState) -> dict[str, Any]:
     }
     if node_name in {"tts_generate_and_detect", "reflect_duration_issues"}:
         event["reflection_rounds"] = int(state.get("reflection_rounds", 0))
+    return event
+
+
+def _workflow_error_progress(exc: Exception, report: dict[str, Any]) -> dict[str, Any]:
+    event: dict[str, Any] = {"event": "error", "report": report}
+    if isinstance(exc, FatalTtsError):
+        event.update(
+            {
+                "node": "tts_generate_and_detect",
+                "status": "error",
+                "message": str(exc),
+                "error": str(exc),
+            }
+        )
     return event
 
 
