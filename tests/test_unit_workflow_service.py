@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import patch
 
 from src.services.job_service import JobService
+from src.services.state_persistence import save_state_snapshot
 from src.services.workflow_service import (
     WorkflowService,
     _ensure_job_config_metadata,
@@ -280,6 +281,90 @@ class WorkflowServiceTests(unittest.TestCase):
             self.assertEqual(updated["status"], "langgraph_failed")
             self.assertEqual(updated["langgraph_progress"]["node"], "tts_generate_and_detect")
 
+    def test_resume_langgraph_workflow_allows_generic_failed_job_with_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = _config(temp_dir)
+            job = _create_job(config, "job-resume-failed")
+            raw_srt_path = _write_raw_asr(job)
+            background_path = Path(job["paths"]["media_dir"]) / "separation" / "background.wav"
+            _write_wav(background_path)
+            job_config = _job_workflow_config(config, job, background_path)
+            save_state_snapshot(
+                job["paths"]["job_dir"],
+                {
+                    "config": job_config,
+                    "raw_srt": raw_srt_path.read_text(encoding="utf-8"),
+                    "raw_cues": [],
+                    "reports": {},
+                    "errors": [],
+                    "reflection_rounds": 0,
+                },
+                "translate_to_english",
+            )
+            JobService(config).update_job(
+                job["job_id"],
+                status="failed",
+                artifacts={"raw_srt": str(raw_srt_path), "background_wav": str(background_path)},
+                reports={"langgraph_workflow_report": str(Path(job["paths"]["reports_dir"]) / "langgraph_workflow_report.json")},
+            )
+            resume_from_values: list[str | None] = []
+
+            class FakeWorkflow:
+                def stream(self, state: dict[str, Any]):
+                    state["final_cues"] = []
+                    state["narration_wav_path"] = state["config"]["paths"]["narration_wav"]
+                    state["narration_mp3_path"] = state["config"]["paths"]["narration_mp3"]
+                    yield {"tts_generate_and_detect": state}
+
+            def fake_build_workflow(job_config: dict[str, Any], resume_from: str | None = None) -> FakeWorkflow:
+                resume_from_values.append(resume_from)
+                return FakeWorkflow()
+
+            with patch("src.services.workflow_service.build_workflow", side_effect=fake_build_workflow):
+                events = list(WorkflowService(config).resume_job_langgraph_workflow_streaming(job["job_id"]))
+
+            self.assertEqual(resume_from_values, ["tts_generate_and_detect"])
+            self.assertEqual(events[0]["event"], "start")
+            self.assertTrue(any(event.get("node") == "tts_generate_and_detect" for event in events))
+            self.assertEqual(events[-1]["event"], "done")
+            updated = JobService(config).get_job(job["job_id"])
+            self.assertEqual(updated["status"], "langgraph_completed")
+
+    def test_resume_langgraph_workflow_allows_generic_failed_job_with_artifact_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = _config(temp_dir)
+            job = _create_job(config, "job-resume-failed-artifact")
+            raw_srt_path = _write_raw_asr(job)
+            background_path = Path(job["paths"]["media_dir"]) / "separation" / "background.wav"
+            _write_wav(background_path)
+            translated_path = Path(job["paths"]["job_dir"]) / "workflow" / "translated" / "en_translated.srt"
+            translated_path.parent.mkdir(parents=True, exist_ok=True)
+            translated_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nTest\n", encoding="utf-8")
+            JobService(config).update_job(
+                job["job_id"],
+                status="failed",
+                artifacts={"raw_srt": str(raw_srt_path), "background_wav": str(background_path)},
+                reports={"langgraph_workflow_report": str(Path(job["paths"]["reports_dir"]) / "langgraph_workflow_report.json")},
+            )
+            resume_from_values: list[str | None] = []
+
+            class FakeWorkflow:
+                def stream(self, state: dict[str, Any]):
+                    state["final_cues"] = []
+                    yield {"tts_generate_and_detect": state}
+
+            def fake_build_workflow(job_config: dict[str, Any], resume_from: str | None = None) -> FakeWorkflow:
+                resume_from_values.append(resume_from)
+                return FakeWorkflow()
+
+            with patch("src.services.workflow_service.build_workflow", side_effect=fake_build_workflow):
+                events = list(WorkflowService(config).resume_job_langgraph_workflow_streaming(job["job_id"]))
+
+            self.assertEqual(resume_from_values, ["tts_generate_and_detect"])
+            self.assertEqual(events[-1]["event"], "done")
+            updated = JobService(config).get_job(job["job_id"])
+            self.assertEqual(updated["status"], "langgraph_completed")
+
     def test_workflow_hint_explains_cuda_dependency_error(self) -> None:
         hint = _workflow_hint("Library cublas64_12.dll is not found or cannot be loaded")
 
@@ -410,6 +495,14 @@ def _create_job(config: dict[str, Any], job_id: str) -> dict[str, Any]:
     }
     service.save_job(job)
     return job
+
+
+def _write_raw_asr(job: dict[str, Any]) -> Path:
+    asr_dir = Path(job["paths"]["job_dir"]) / "workflow" / "asr"
+    asr_dir.mkdir(parents=True, exist_ok=True)
+    raw_srt_path = asr_dir / "zh_raw.srt"
+    raw_srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\n测试字幕\n", encoding="utf-8")
+    return raw_srt_path
 
 
 def _write_wav(path: Path) -> None:

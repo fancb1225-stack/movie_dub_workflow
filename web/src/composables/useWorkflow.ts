@@ -18,6 +18,18 @@ const DEFAULT_VOICE_OPTIONS: VoiceOption[] = [
   { voice_id: "default", label: "默认音色", original_label: "Default", language: "默认" }
 ];
 
+export function isWorkflowResumable(job: Job | null | undefined): boolean {
+  if (!job) return false;
+  if (job.status === "langgraph_paused" || job.status === "langgraph_failed") return true;
+  if (job.status !== "failed") return false;
+
+  return Boolean(
+    job.extra?.langgraph_workflow_report ||
+      job.extra?.langgraph_progress ||
+      job.reports?.langgraph_workflow_report
+  );
+}
+
 export function useWorkflow(
   apiBase: Ref<string>,
   job: Ref<Job | null>,
@@ -44,7 +56,7 @@ export function useWorkflow(
     speaker_profiles: speakerProfiles.value
   });
 
-  const canResume = computed(() => job.value?.status === "langgraph_paused" || job.value?.status === "langgraph_failed");
+  const canResume = computed(() => isWorkflowResumable(job.value));
 
   function resetSteps(target: Ref<StepState[]>, source: StepState[]): void {
     target.value = cloneSteps(source);
