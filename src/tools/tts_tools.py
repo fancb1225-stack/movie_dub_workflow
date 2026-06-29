@@ -344,6 +344,8 @@ def _resolve_speaker_profile(cue: SrtCue, tts_config: dict[str, Any]) -> dict[st
         default_voice = _minimax_config(tts_config).get("default_voice_id") or tts_config.get("voice")
         if default_voice:
             profile = {"voice_id": default_voice}
+    if str(tts_config.get("provider", "")).lower() == "minimax" and not profile.get("voice_id"):
+        profile["voice_id"] = "Wise_Woman"
     if speaker_id != "default":
         profile.setdefault("speaker_id", speaker_id)
     if "speed" not in profile:
