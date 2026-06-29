@@ -34,6 +34,7 @@ class TtsSegment(TypedDict, total=False):
     provider: str
     voice_id: str
     speed: float
+    reused: bool
 
 
 class DurationIssue(TypedDict, total=False):

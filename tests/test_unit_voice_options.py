@@ -50,6 +50,20 @@ class VoiceOptionsTests(unittest.TestCase):
             {"speaker_1": {"voice_id": "Santa_Claus"}},
         )
 
+    def test_workflow_overrides_normalize_default_speaker_profile_for_tts(self) -> None:
+        overrides = _build_workflow_overrides(
+            None,
+            None,
+            None,
+            None,
+            {"speaker_profiles": {"speaker_1": "Wise_Woman", "default": "Wise_Woman"}},
+        )
+
+        self.assertEqual(
+            overrides["tts.speaker_profiles"],
+            {"speaker_1": {"voice_id": "Wise_Woman"}, "default": {"voice_id": "Wise_Woman"}},
+        )
+
     def test_voice_options_api_returns_model_id_and_translated_label(self) -> None:
         client = TestClient(create_app())
 

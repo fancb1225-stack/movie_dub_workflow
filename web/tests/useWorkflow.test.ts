@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isWorkflowResumable } from "../src/composables/useWorkflow.js";
+import { buildSpeakerProfilesWithDefault, isWorkflowResumable } from "../src/composables/useWorkflow.js";
 import type { Job } from "../src/types/api.js";
 
 function job(status: string, overrides: Partial<Job> = {}): Job {
@@ -46,4 +46,26 @@ test("isWorkflowResumable rejects non-resumable workflow states", () => {
   for (const status of ["created", "preprocessed", "asr_completed", "langgraph_running", "langgraph_completed"]) {
     assert.equal(isWorkflowResumable(job(status)), false, status);
   }
+});
+
+test("buildSpeakerProfilesWithDefault always includes default voice", () => {
+  assert.deepEqual(buildSpeakerProfilesWithDefault(["speaker_1", "speaker_2"], {}), {
+    speaker_1: "Wise_Woman",
+    speaker_2: "Wise_Woman",
+    default: "Wise_Woman"
+  });
+});
+
+test("buildSpeakerProfilesWithDefault preserves existing speaker and default choices", () => {
+  assert.deepEqual(
+    buildSpeakerProfilesWithDefault(["speaker_1", "speaker_2"], {
+      speaker_1: "Deep_Voice_Man",
+      default: "Calm_Woman"
+    }),
+    {
+      speaker_1: "Deep_Voice_Man",
+      speaker_2: "Wise_Woman",
+      default: "Calm_Woman"
+    }
+  );
 });

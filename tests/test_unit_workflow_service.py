@@ -308,6 +308,7 @@ class WorkflowServiceTests(unittest.TestCase):
                 reports={"langgraph_workflow_report": str(Path(job["paths"]["reports_dir"]) / "langgraph_workflow_report.json")},
             )
             resume_from_values: list[str | None] = []
+            reuse_flags: list[bool] = []
 
             class FakeWorkflow:
                 def stream(self, state: dict[str, Any]):
@@ -318,12 +319,14 @@ class WorkflowServiceTests(unittest.TestCase):
 
             def fake_build_workflow(job_config: dict[str, Any], resume_from: str | None = None) -> FakeWorkflow:
                 resume_from_values.append(resume_from)
+                reuse_flags.append(bool(job_config.get("workflow", {}).get("reuse_existing_tts_segments")))
                 return FakeWorkflow()
 
             with patch("src.services.workflow_service.build_workflow", side_effect=fake_build_workflow):
                 events = list(WorkflowService(config).resume_job_langgraph_workflow_streaming(job["job_id"]))
 
             self.assertEqual(resume_from_values, ["tts_generate_and_detect"])
+            self.assertEqual(reuse_flags, [True])
             self.assertEqual(events[0]["event"], "start")
             self.assertTrue(any(event.get("node") == "tts_generate_and_detect" for event in events))
             self.assertEqual(events[-1]["event"], "done")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 
 from src.config import config_path
@@ -17,7 +18,15 @@ def tts_generate_and_detect(state: WorkflowState) -> WorkflowState:
     cues = state.get("final_cues", [])
     _pause_if_speaker_profiles_missing(state, cues)
     logger.info("tts_generate_and_detect: %d cues, provider=%s", len(cues), config.get("tts", {}).get("provider"))
-    segments = generate_tts_segments(cues, config_path(config, "paths.tts_segments_dir"), config)
+    reuse_existing = bool(config.get("workflow", {}).get("reuse_existing_tts_segments", False))
+    failed_indices = _failed_tts_indices_from_previous_report(config) if reuse_existing else set()
+    segments = generate_tts_segments(
+        cues,
+        config_path(config, "paths.tts_segments_dir"),
+        config,
+        reuse_existing=reuse_existing,
+        force_regenerate_indices=failed_indices,
+    )
     duration_config = config.get("duration", {})
     issues = detect_duration_issues(
         cues,
@@ -48,6 +57,29 @@ def tts_generate_and_detect(state: WorkflowState) -> WorkflowState:
     state["duration_issues"] = issues
     state.setdefault("reports", {})["tts_duration_report"] = str(report_path)
     return state
+
+
+def _failed_tts_indices_from_previous_report(config: dict) -> set[int]:
+    report_path = config_path(config, "paths.reports_dir") / "tts_duration_report.json"
+    if not report_path.exists():
+        return set()
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("Previous TTS report cannot be read for resume: %s", exc)
+        return set()
+    failed_errors = report.get("failed_errors") if isinstance(report, dict) else None
+    if not isinstance(failed_errors, list):
+        return set()
+    indices: set[int] = set()
+    for item in failed_errors:
+        if not isinstance(item, dict):
+            continue
+        try:
+            indices.add(int(item["index"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return indices
 
 
 def _pause_if_speaker_profiles_missing(state: WorkflowState, cues: list) -> None:

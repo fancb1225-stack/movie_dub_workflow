@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import math
 import traceback
@@ -44,36 +45,86 @@ def is_fatal_tts_error(exc_or_message: Exception | str) -> bool:
     return any(marker in message for marker in fatal_markers)
 
 
+TTS_SEGMENT_MANIFEST = "segment_manifest.json"
+
+
 def generate_tts_segments(
     cues: list[SrtCue],
     output_dir: str | Path,
     config: dict[str, Any],
+    *,
+    reuse_existing: bool = False,
+    force_regenerate_indices: set[int] | None = None,
 ) -> list[TtsSegment]:
     directory = ensure_dir(output_dir)
-    clean_dir(directory, "segment_*.mp3")
     tts_config = config.get("tts", {})
     provider = str(tts_config.get("provider", "mock")).lower()
-    logger.info("TTS generate: provider=%s, cues=%d, output_dir=%s", provider, len(cues), directory)
+    force_indices = force_regenerate_indices or set()
+    if reuse_existing:
+        manifest = _load_tts_segment_manifest(directory)
+    else:
+        clean_dir(directory, "segment_*.mp3")
+        _manifest_path(directory).unlink(missing_ok=True)
+        manifest = {"version": 1, "segments": {}}
+    logger.info(
+        "TTS generate: provider=%s, cues=%d, output_dir=%s, reuse_existing=%s",
+        provider,
+        len(cues),
+        directory,
+        reuse_existing,
+    )
     logger.debug("TTS config: %s", tts_config)
-    segments: list[TtsSegment] = []
+
+    reused_by_index: dict[int, TtsSegment] = {}
+    cues_to_generate: list[SrtCue] = []
+    for cue in cues:
+        reused = None
+        if reuse_existing:
+            reused = _try_reuse_tts_segment(cue, directory, config, tts_config, provider, manifest, force_indices)
+        if reused is None:
+            cues_to_generate.append(cue)
+        else:
+            reused_by_index[int(cue["index"])] = reused
+
+    generated = _generate_tts_segments_batch(cues_to_generate, directory, config, tts_config, provider)
+    segments_by_index = dict(reused_by_index)
+    for segment in generated:
+        segments_by_index[int(segment["index"])] = segment
+
+    segments = [segments_by_index[int(cue["index"])] for cue in cues]
+    _write_tts_segment_manifest(directory, _build_tts_segment_manifest(cues, segments, tts_config, provider))
+    success_count = sum(1 for segment in segments if segment["success"])
+    logger.info(
+        "TTS generate done: %d/%d segments succeeded (reused=%d, generated=%d)",
+        success_count,
+        len(segments),
+        len(reused_by_index),
+        len(generated),
+    )
+    return segments
+
+
+def _generate_tts_segments_batch(
+    cues: list[SrtCue],
+    directory: Path,
+    config: dict[str, Any],
+    tts_config: dict[str, Any],
+    provider: str,
+) -> list[TtsSegment]:
+    if not cues:
+        return []
     max_workers = max(1, int(tts_config.get("concurrency", 25 if provider == "minimax" else 1)))
     if max_workers <= 1 or len(cues) <= 1:
-        segments = [_generate_one_tts_segment(cue, directory, config, tts_config, provider) for cue in cues]
-    else:
-        results: dict[int, TtsSegment] = {
-            0: _generate_one_tts_segment(cues[0], directory, config, tts_config, provider)
+        return [_generate_one_tts_segment(cue, directory, config, tts_config, provider) for cue in cues]
+    results: dict[int, TtsSegment] = {0: _generate_one_tts_segment(cues[0], directory, config, tts_config, provider)}
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(cues))) as executor:
+        futures = {
+            executor.submit(_generate_one_tts_segment, cue, directory, config, tts_config, provider): idx
+            for idx, cue in enumerate(cues[1:], start=1)
         }
-        with ThreadPoolExecutor(max_workers=min(max_workers, len(cues))) as executor:
-            futures = {
-                executor.submit(_generate_one_tts_segment, cue, directory, config, tts_config, provider): idx
-                for idx, cue in enumerate(cues[1:], start=1)
-            }
-            for future in as_completed(futures):
-                results[futures[future]] = future.result()
-        segments = [results[idx] for idx in range(len(cues))]
-    success_count = sum(1 for s in segments if s["success"])
-    logger.info("TTS generate done: %d/%d segments succeeded", success_count, len(segments))
-    return segments
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+    return [results[idx] for idx in range(len(cues))]
 
 
 def _generate_one_tts_segment(
@@ -99,23 +150,7 @@ def _generate_one_tts_segment(
             raise RuntimeError(f"TTS output file is empty (0 bytes): {segment_path}")
         duration_ms = get_audio_duration_ms(segment_path, config)
         logger.debug("TTS segment %d OK: size=%d, duration_ms=%d", cue["index"], file_size, duration_ms)
-        segment: TtsSegment = {
-            "index": cue["index"],
-            "text": cue["text"],
-            "start_ms": cue["start_ms"],
-            "end_ms": cue["end_ms"],
-            "path": str(segment_path),
-            "duration_ms": duration_ms,
-            "success": True,
-            "provider": provider,
-        }
-        if cue.get("speaker_id"):
-            segment["speaker_id"] = cue["speaker_id"]
-        if speaker_profile.get("voice_id"):
-            segment["voice_id"] = str(speaker_profile["voice_id"])
-        if speaker_profile.get("speed") is not None:
-            segment["speed"] = float(speaker_profile["speed"])
-        return segment
+        return _build_success_tts_segment(cue, segment_path, duration_ms, provider, speaker_profile)
     except FatalTtsError:
         logger.error("TTS segment %d FATAL:\n%s", cue["index"], traceback.format_exc())
         raise
@@ -143,6 +178,158 @@ def _generate_one_tts_segment(
         if cue.get("speaker_id"):
             failed_segment["speaker_id"] = cue["speaker_id"]
         return failed_segment
+
+
+def _manifest_path(directory: Path) -> Path:
+    return directory / TTS_SEGMENT_MANIFEST
+
+
+def _load_tts_segment_manifest(directory: Path) -> dict[str, Any]:
+    path = _manifest_path(directory)
+    if not path.exists():
+        return {"version": 1, "segments": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("segments"), dict):
+            return data
+    except Exception as exc:
+        logger.warning("TTS segment manifest cannot be read; regenerating as needed: %s", exc)
+    return {"version": 1, "segments": {}}
+
+
+def _write_tts_segment_manifest(directory: Path, manifest: dict[str, Any]) -> None:
+    _manifest_path(directory).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def _try_reuse_tts_segment(
+    cue: SrtCue,
+    directory: Path,
+    config: dict[str, Any],
+    tts_config: dict[str, Any],
+    provider: str,
+    manifest: dict[str, Any],
+    force_regenerate_indices: set[int],
+) -> TtsSegment | None:
+    index = int(cue["index"])
+    if index in force_regenerate_indices:
+        return None
+    speaker_profile = _resolve_speaker_profile(cue, tts_config)
+    signature = _tts_segment_signature(cue, tts_config, speaker_profile, provider)
+    entry = manifest.get("segments", {}).get(str(index))
+    if not isinstance(entry, dict) or not entry.get("success") or entry.get("signature") != signature:
+        return None
+    segment_path = directory / f"segment_{index:04d}.mp3"
+    try:
+        if not segment_path.exists() or segment_path.stat().st_size <= 0:
+            return None
+        duration_ms = get_audio_duration_ms(segment_path, config)
+    except Exception as exc:
+        logger.warning("Existing TTS segment %d cannot be reused; regenerating: %s", index, exc)
+        return None
+    segment = _build_success_tts_segment(cue, segment_path, duration_ms, provider, speaker_profile)
+    segment["reused"] = True
+    return segment
+
+
+def _build_success_tts_segment(
+    cue: SrtCue,
+    segment_path: Path,
+    duration_ms: int,
+    provider: str,
+    speaker_profile: dict[str, Any],
+) -> TtsSegment:
+    segment: TtsSegment = {
+        "index": cue["index"],
+        "text": cue["text"],
+        "start_ms": cue["start_ms"],
+        "end_ms": cue["end_ms"],
+        "path": str(segment_path),
+        "duration_ms": duration_ms,
+        "success": True,
+        "provider": provider,
+    }
+    if cue.get("speaker_id"):
+        segment["speaker_id"] = cue["speaker_id"]
+    if speaker_profile.get("voice_id"):
+        segment["voice_id"] = str(speaker_profile["voice_id"])
+    if speaker_profile.get("speed") is not None:
+        segment["speed"] = float(speaker_profile["speed"])
+    return segment
+
+
+def _build_tts_segment_manifest(
+    cues: list[SrtCue],
+    segments: list[TtsSegment],
+    tts_config: dict[str, Any],
+    provider: str,
+) -> dict[str, Any]:
+    by_index = {int(segment["index"]): segment for segment in segments}
+    entries: dict[str, Any] = {}
+    for cue in cues:
+        index = int(cue["index"])
+        segment = by_index[index]
+        speaker_profile = _resolve_speaker_profile(cue, tts_config)
+        entries[str(index)] = _manifest_entry_for_segment(
+            cue,
+            segment,
+            _tts_segment_signature(cue, tts_config, speaker_profile, provider),
+        )
+    return {"version": 1, "segments": entries}
+
+
+def _manifest_entry_for_segment(cue: SrtCue, segment: TtsSegment, signature: str) -> dict[str, Any]:
+    path = Path(str(segment.get("path", "")))
+    entry: dict[str, Any] = {
+        "index": cue["index"],
+        "path": str(path),
+        "text": cue["text"],
+        "success": bool(segment.get("success")),
+        "provider": segment.get("provider"),
+        "speaker_id": cue.get("speaker_id") or "default",
+        "voice_id": segment.get("voice_id"),
+        "speed": segment.get("speed"),
+        "duration_ms": segment.get("duration_ms"),
+        "signature": signature,
+    }
+    if path.exists():
+        entry["file_size"] = path.stat().st_size
+    if segment.get("error"):
+        entry["error"] = segment["error"]
+    return entry
+
+
+def _tts_segment_signature(
+    cue: SrtCue,
+    tts_config: dict[str, Any],
+    speaker_profile: dict[str, Any],
+    provider: str,
+) -> str:
+    minimax = _minimax_config(tts_config)
+    payload = {
+        "index": cue["index"],
+        "text": cue["text"],
+        "provider": provider,
+        "speaker_id": cue.get("speaker_id") or "default",
+        "voice_id": speaker_profile.get("voice_id"),
+        "speed": speaker_profile.get("speed"),
+        "volume": speaker_profile.get("volume", speaker_profile.get("vol")),
+        "pitch": speaker_profile.get("pitch"),
+        "language_boost": speaker_profile.get("language_boost", minimax.get("language_boost")),
+        "voice": tts_config.get("voice"),
+        "rate": tts_config.get("rate"),
+        "sample_rate": tts_config.get("sample_rate"),
+        "minimax": {
+            "model": minimax.get("model"),
+            "base_url": minimax.get("base_url"),
+            "create_path": minimax.get("create_path"),
+        },
+    }
+    data = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
 def _resolve_speaker_profile(cue: SrtCue, tts_config: dict[str, Any]) -> dict[str, Any]:

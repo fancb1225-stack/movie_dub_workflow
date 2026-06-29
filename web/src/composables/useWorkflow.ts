@@ -30,6 +30,15 @@ export function isWorkflowResumable(job: Job | null | undefined): boolean {
   );
 }
 
+export function buildSpeakerProfilesWithDefault(
+  speakers: string[],
+  existingProfiles: Record<string, string>,
+  defaultVoice = "Wise_Woman"
+): Record<string, string> {
+  const keys = Array.from(new Set([...speakers.filter(Boolean), "default"]));
+  return Object.fromEntries(keys.map((speaker) => [speaker, existingProfiles[speaker] || defaultVoice]));
+}
+
 export function useWorkflow(
   apiBase: Ref<string>,
   job: Ref<Job | null>,
@@ -293,7 +302,7 @@ export function useWorkflow(
     const candidates = [job.value.asr_result?.speakers, job.value.extra?.asr_result?.speakers];
     const found = candidates.find((value): value is string[] => Array.isArray(value) && value.length > 0);
     if (found) {
-      speakerProfiles.value = Object.fromEntries(found.map((speaker) => [speaker, speakerProfiles.value[speaker] || "Wise_Woman"]));
+      speakerProfiles.value = buildSpeakerProfilesWithDefault(found, speakerProfiles.value);
       return;
     }
     try {
@@ -303,7 +312,7 @@ export function useWorkflow(
       if (!candidatePath) throw new Error("No speaker file");
       const rows = await requestJson<Array<{ speaker_id?: string }>>(apiBase.value, `/api/jobs/${job.value.job_id}/files/download?path=${encodeURIComponent(candidatePath)}`);
       const speakers = Array.from(new Set(rows.map((row) => row.speaker_id).filter(Boolean))) as string[];
-      speakerProfiles.value = Object.fromEntries((speakers.length ? speakers : ["default"]).map((speaker) => [speaker, speakerProfiles.value[speaker] || "Wise_Woman"]));
+      speakerProfiles.value = buildSpeakerProfilesWithDefault(speakers.length ? speakers : [], speakerProfiles.value);
     } catch {
       speakerProfiles.value = { default: speakerProfiles.value.default || "Wise_Woman" };
     }

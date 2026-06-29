@@ -9,15 +9,203 @@ from unittest.mock import patch, MagicMock
 
 from src.tools.tts_tools import (
     FatalTtsError,
+    _build_success_tts_segment,
+    _build_tts_segment_manifest,
     _generate_edge_tts,
     _generate_minimax_tts,
     _minimax_request_json,
+    _resolve_speaker_profile,
     generate_tts_segments,
 )
 from src.nodes.tts_duration_node import tts_generate_and_detect
 
 
+def _cue(index: int, text: str, speaker_id: str | None = None) -> dict:
+    cue = {
+        "index": index,
+        "start": "00:00:00,000",
+        "end": "00:00:01,000",
+        "start_ms": 0,
+        "end_ms": 1000,
+        "text": text,
+    }
+    if speaker_id:
+        cue["speaker_id"] = speaker_id
+    return cue
+
+
+def _write_manifest_for_cue(directory: Path, cue: dict, config: dict, *, success: bool) -> None:
+    tts_config = config.get("tts", {})
+    provider = str(tts_config.get("provider", "mock")).lower()
+    speaker_profile = _resolve_speaker_profile(cue, tts_config)
+    segment = _build_success_tts_segment(
+        cue,
+        directory / f"segment_{cue['index']:04d}.mp3",
+        1000,
+        provider,
+        speaker_profile,
+    )
+    if not success:
+        segment["success"] = False
+        segment["error"] = "failed"
+    manifest = _build_tts_segment_manifest([cue], [segment], tts_config, provider)
+    (directory / "segment_manifest.json").write_text(
+        __import__("json").dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 class TtsToolsTests(unittest.TestCase):
+    def test_generate_segments_default_mode_cleans_existing_segments(self) -> None:
+        cue = _cue(1, "hello")
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            stale = directory / "segment_9999.mp3"
+            stale.write_bytes(b"stale")
+            existing = directory / "segment_0001.mp3"
+            existing.write_bytes(b"old")
+            with patch("src.tools.tts_tools._generate_mock_audio", side_effect=lambda text, path, cfg: Path(path).write_bytes(b"new")), \
+                patch("src.tools.tts_tools.get_audio_duration_ms", return_value=1000):
+                segments = generate_tts_segments([cue], directory, {"tts": {"provider": "mock"}})
+
+            self.assertTrue(segments[0]["success"])
+            self.assertEqual(existing.read_bytes(), b"new")
+            self.assertFalse(stale.exists())
+
+    def test_generate_segments_resume_reuses_valid_manifest_matching_segment(self) -> None:
+        cue = _cue(1, "hello", speaker_id="speaker_1")
+        config = {"tts": {"provider": "mock", "speaker_profiles": {"speaker_1": {"voice_id": "voice-a"}}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            segment_path = directory / "segment_0001.mp3"
+            segment_path.write_bytes(b"audio")
+            _write_manifest_for_cue(directory, cue, config, success=True)
+            with patch("src.tools.tts_tools._generate_mock_audio") as generate_audio, \
+                patch("src.tools.tts_tools.get_audio_duration_ms", return_value=1234):
+                segments = generate_tts_segments([cue], directory, config, reuse_existing=True)
+
+            generate_audio.assert_not_called()
+            self.assertTrue(segments[0]["success"])
+            self.assertTrue(segments[0]["reused"])
+            self.assertEqual(segments[0]["duration_ms"], 1234)
+            self.assertEqual(segments[0]["voice_id"], "voice-a")
+
+    def test_generate_segments_resume_regenerates_missing_segment(self) -> None:
+        cue = _cue(1, "hello")
+        config = {"tts": {"provider": "mock"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            _write_manifest_for_cue(directory, cue, config, success=True)
+            with patch("src.tools.tts_tools._generate_mock_audio", side_effect=lambda text, path, cfg: Path(path).write_bytes(b"new")) as generate_audio, \
+                patch("src.tools.tts_tools.get_audio_duration_ms", return_value=1000):
+                segments = generate_tts_segments([cue], directory, config, reuse_existing=True)
+
+            self.assertEqual(generate_audio.call_count, 1)
+            self.assertTrue(segments[0]["success"])
+            self.assertNotIn("reused", segments[0])
+
+    def test_generate_segments_resume_regenerates_zero_byte_segment(self) -> None:
+        cue = _cue(1, "hello")
+        config = {"tts": {"provider": "mock"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / "segment_0001.mp3").write_bytes(b"")
+            _write_manifest_for_cue(directory, cue, config, success=True)
+            with patch("src.tools.tts_tools._generate_mock_audio", side_effect=lambda text, path, cfg: Path(path).write_bytes(b"new")) as generate_audio, \
+                patch("src.tools.tts_tools.get_audio_duration_ms", return_value=1000):
+                generate_tts_segments([cue], directory, config, reuse_existing=True)
+
+            self.assertEqual(generate_audio.call_count, 1)
+
+    def test_generate_segments_resume_regenerates_unreadable_segment(self) -> None:
+        cue = _cue(1, "hello")
+        config = {"tts": {"provider": "mock"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / "segment_0001.mp3").write_bytes(b"audio")
+            _write_manifest_for_cue(directory, cue, config, success=True)
+            with patch("src.tools.tts_tools._generate_mock_audio", side_effect=lambda text, path, cfg: Path(path).write_bytes(b"new")) as generate_audio, \
+                patch("src.tools.tts_tools.get_audio_duration_ms", side_effect=[RuntimeError("bad audio"), 1000]):
+                segments = generate_tts_segments([cue], directory, config, reuse_existing=True)
+
+            self.assertEqual(generate_audio.call_count, 1)
+            self.assertTrue(segments[0]["success"])
+
+    def test_generate_segments_resume_regenerates_when_cue_text_changed(self) -> None:
+        old_cue = _cue(1, "old text")
+        new_cue = _cue(1, "new text")
+        config = {"tts": {"provider": "mock"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / "segment_0001.mp3").write_bytes(b"audio")
+            _write_manifest_for_cue(directory, old_cue, config, success=True)
+            with patch("src.tools.tts_tools._generate_mock_audio", side_effect=lambda text, path, cfg: Path(path).write_bytes(b"new")) as generate_audio, \
+                patch("src.tools.tts_tools.get_audio_duration_ms", return_value=1000):
+                generate_tts_segments([new_cue], directory, config, reuse_existing=True)
+
+            self.assertEqual(generate_audio.call_count, 1)
+
+    def test_generate_segments_resume_regenerates_when_voice_changes(self) -> None:
+        cue = _cue(1, "hello", speaker_id="speaker_1")
+        old_config = {"tts": {"provider": "mock", "speaker_profiles": {"speaker_1": {"voice_id": "voice-a"}}}}
+        new_config = {"tts": {"provider": "mock", "speaker_profiles": {"speaker_1": {"voice_id": "voice-b"}}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / "segment_0001.mp3").write_bytes(b"audio")
+            _write_manifest_for_cue(directory, cue, old_config, success=True)
+            with patch("src.tools.tts_tools._generate_mock_audio", side_effect=lambda text, path, cfg: Path(path).write_bytes(b"new")) as generate_audio, \
+                patch("src.tools.tts_tools.get_audio_duration_ms", return_value=1000):
+                generate_tts_segments([cue], directory, new_config, reuse_existing=True)
+
+            self.assertEqual(generate_audio.call_count, 1)
+
+    def test_generate_segments_resume_force_regenerate_indices_ignores_reusable_manifest(self) -> None:
+        cue = _cue(142, "thank you")
+        config = {"tts": {"provider": "mock"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / "segment_0142.mp3").write_bytes(b"audio")
+            _write_manifest_for_cue(directory, cue, config, success=True)
+            with patch("src.tools.tts_tools._generate_mock_audio", side_effect=lambda text, path, cfg: Path(path).write_bytes(b"new")) as generate_audio, \
+                patch("src.tools.tts_tools.get_audio_duration_ms", return_value=1000):
+                generate_tts_segments([cue], directory, config, reuse_existing=True, force_regenerate_indices={142})
+
+            self.assertEqual(generate_audio.call_count, 1)
+
+    def test_tts_node_passes_resume_reuse_and_failed_indices(self) -> None:
+        cue = _cue(142, "thank you")
+        generated_segment = {
+            **cue,
+            "path": "segment_0142.mp3",
+            "duration_ms": 1000,
+            "success": True,
+            "provider": "mock",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            report_dir = Path(tmp) / "reports"
+            report_dir.mkdir()
+            (report_dir / "tts_duration_report.json").write_text(
+                '{"failed_errors":[{"index":142,"error":"missing voice"}]}',
+                encoding="utf-8",
+            )
+            with patch("src.nodes.tts_duration_node.generate_tts_segments", return_value=[generated_segment]) as generate:
+                tts_generate_and_detect(
+                    {
+                        "config": {
+                            "project_root": tmp,
+                            "paths": {"tts_segments_dir": "tts_segments", "reports_dir": "reports"},
+                            "workflow": {"reuse_existing_tts_segments": True},
+                            "duration": {"max_overrun_ms": 350, "max_ratio": 10.0},
+                        },
+                        "final_cues": [cue],
+                        "corrected_cues": [],
+                        "reports": {},
+                    }
+                )
+
+            self.assertTrue(generate.call_args.kwargs["reuse_existing"])
+            self.assertEqual(generate.call_args.kwargs["force_regenerate_indices"], {142})
+
     def test_edge_tts_uses_default_rate_1_3(self) -> None:
         calls = []
 

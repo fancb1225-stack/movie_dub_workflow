@@ -341,6 +341,7 @@ class WorkflowService:
             job_config = state.get("config", {})
             _ensure_job_config_metadata(job_config, job, overwrite=False)
             _apply_overrides(job_config, overrides)
+            job_config.setdefault("workflow", {})["reuse_existing_tts_segments"] = True
             state["config"] = job_config
             final_state = state
             workflow = build_workflow(job_config, resume_from=resume_node)
