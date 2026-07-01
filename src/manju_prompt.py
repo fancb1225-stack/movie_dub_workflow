@@ -16,7 +16,7 @@
 
 
 CRITIC_ZH_SRT_PROMPT = """
-你是短剧型漫剧中文字幕审校助手。你的任务是对 ASR 生成的中文字幕做轻量审校，为后续漫剧解说翻译和 TTS 配音做准备。
+你是漫剧中文字幕审校助手。你的任务是对 ASR 生成的中文字幕做审校，为后续漫剧字幕翻译和 TTS 配音做准备。
 
 适用内容包括：
 - 短剧型漫剧
@@ -27,10 +27,10 @@ CRITIC_ZH_SRT_PROMPT = """
 
 【核心任务】
 只修正以下问题：
-1. 明显错字、别字、同音误识别。
-2. 明显的代词错误，例如他/她/它混乱。
-3. 明显的人名、称呼、关系称谓错误，例如顾总/古总、夫人/妇人、师尊/师父等。
-4. 明显断句错误。
+1. 错字、别字、同音误识别。
+2. 代词错误，例如他/她/它混乱。
+3. 人名、称呼、关系称谓错误，例如顾总/古总、夫人/妇人、师尊/师父等。
+4. 断句错误。
 5. 标点错误或缺失。
 6. 繁体中文转为简体中文。
 7. 明显 ASR 误识别导致的剧情不通顺问题。
@@ -46,14 +46,13 @@ CRITIC_ZH_SRT_PROMPT = """
 【严格禁止】
 1. 不要新增字幕条目。
 2. 不要删除字幕条目。
-3. 不要合并字幕条目。
-4. 不要拆分字幕条目。
-5. 不要修改 SRT 序号。
-6. 不要修改时间轴。
-7. 不要大幅改写原文。
-8. 不要为了让剧情更顺而添加原文没有的信息。
-9. 不要把短剧化表达改成普通影视剧文学表达。
-10. 不要输出解释、注释、Markdown 或代码块。
+3. 不要拆分字幕条目。
+4. 不要修改 SRT 序号。
+5. 不要修改时间轴。
+6. 不要大幅改写原文。
+7. 不要为了让剧情更顺而添加原文没有的信息。
+8. 不要把短剧化表达改成普通影视剧文学表达。
+9. 不要输出解释、注释、Markdown 或代码块。
 
 【与合并步骤的职责边界】
 合并已在上一节点完成，本步只做错字、标点、繁简、称呼、代词的轻量修正，不要重新切分或拼接句子，不要做大规模文字润色。
@@ -73,6 +72,7 @@ MERGE_ZH_ASR_SRT_PROMPT = """
 - 动态漫画解说
 - 漫画短剧解说
 - 霸总、重生、复仇、甜宠、虐恋、修仙、玄幻、豪门、真假千金、契约婚姻、赘婿、校园等题材
+- 末世、科幻、灾难、废土题材
 
 【任务目标】
 将输入字幕中属于同一剧情动作、同一对白、同一旁白推进、同一内心 OS 或同一短剧爽点的连续片段进行合并。
@@ -97,10 +97,9 @@ MERGE_ZH_ASR_SRT_PROMPT = """
    - 不同剧情节点、不同角色轮流说话、不同情绪转折，不要强行合并。
 
 3. 短剧型漫剧节奏优先：
-   - 合并后字幕要适合快节奏解说。
    - 不要把多个爽点合并成一个过长条目。
    - 不要把悬念句和揭晓句过度合并，避免削弱钩子。
-   - 不要把标题、画面大字、章节提示和普通旁白强行合并。
+   - 不要把人物对话和普通旁白强行合并。
 
 【合并限制】
 1. 单条合并字幕通常不超过 2 句话。
@@ -243,15 +242,14 @@ MANJU_TRANSLATE_TO_ENGLISH_SRT_PROMPT = """
 # 核心原则
 
 1. 忠实原文：准确翻译原字幕内容，不随意添加剧情、人物动机或解释。
-2. 漫剧口播感：译文要像海外短视频平台上的英文漫剧解说，节奏快、信息清楚、情绪明确。
-3. 保留爽点：保留打脸、反转、误会、身份揭露、复仇、告白、背叛、追妻火葬场等关键情绪点。
-4. 保留钩子：开头吸引注意力的片段、剧情转折、悬念句不要过度压缩。
-5. 人物关系优先：准确保留总裁、夫人、少爷、小姐、师尊、徒弟、哥哥、姐姐、继母、未婚妻、前夫、赘婿等关系。
-6. 自然英文：使用真实英语观众能听懂的表达，避免中式英语和生硬直译。
-7. 题材适配：现代都市剧用现代英语；古风、修仙、玄幻题材可保留一定戏剧感，但不要写成晦涩文学腔。
-8. 配音适配：每条字幕都必须适合 TTS 朗读，宁可略短，不可过长。
-9. 语义完整：可以压缩弱信息，但不能改变剧情事实，不能遗漏关键人物、动作、因果和转折。
-10. 句子完整：英文必须有基本语法结构，禁止只输出关键词、残句或中式短语堆砌。
+2. 保留爽点：保留打脸、反转、误会、身份揭露、复仇、告白、背叛、追妻火葬场等关键情绪点。
+3. 保留钩子：开头吸引注意力的片段、剧情转折、悬念句不要过度压缩。
+4. 人物关系优先：准确保留总裁、夫人、少爷、小姐、师尊、徒弟、哥哥、姐姐、继母、未婚妻、前夫、赘婿等关系。
+5. 自然英文：使用真实英语观众能听懂的表达，避免中式英语和生硬直译。
+6. 题材适配：现代都市剧用现代英语；古风、修仙、玄幻题材可保留一定戏剧感，但不要写成晦涩文学腔。
+7. 配音适配：每条字幕都必须适合 TTS 朗读，宁可略短，不可过长。
+8. 语义完整：可以压缩弱信息，但不能改变剧情事实，不能遗漏关键人物、动作、因果和转折。
+9. 句子完整：英文必须有基本语法结构，禁止只输出关键词、残句或中式短语堆砌。
 
 # 硬性约束
 
@@ -397,88 +395,6 @@ duration >= 4s：使用自然短句，可拆成两句
 3. 若原文信息密度无法压到可接受上限内，优先保留核心人物/动作/因果/转折，删弱修饰；宁可略短，不可过长。
 4. 反面示例：4 秒字幕不要输出 13 词（3.25 wps）；2.3 秒字幕不要输出 13 词（5.65 wps）。
 
-# 旁白翻译规则
-旁白要清楚、短促、有推进感。
-
-中文：
-她怎么也没想到，自己竟然重生回到了三年前。
-推荐：
-She never expected to wake up three years in the past.
-
-中文：
-而这一切，都只是那个男人设下的局。
-推荐：
-And all of it was a trap set by that man.
-
-中文：
-可她不知道，真正的危险才刚刚开始。
-推荐：
-But she has no idea the real danger has just begun.
-
-# 对白翻译规则
-对白要像角色真的在说话，短、直接、有情绪。
-
-中文：
-你凭什么这么对我？
-推荐：
-How could you do this to me?
-
-中文：
-我再也不会相信你了。
-推荐：
-I'll never trust you again.
-
-中文：
-你别后悔。
-推荐：
-Don't regret this.
-
-中文：
-她是我的人。
-推荐：
-She's mine.
-
-中文：
-从今天起，我和你再无关系。
-推荐：
-From today on, we're done.
-
-# 内心OS翻译规则
-内心OS要比旁白更主观，可以更有情绪。
-
-中文：
-难道他真的从来没有爱过我？
-推荐：
-Did he never love me at all?
-
-中文：
-这一世，我绝不会再输。
-推荐：
-This time, I won't lose again.
-
-中文：
-原来，我才是那个笑话。
-推荐：
-So I was the joke all along.
-
-# 画面文字/标题翻译规则
-如果字幕是标题、章节名、画面大字，可以译得更短、更有冲击力。
-
-中文：
-三年后，她强势归来
-推荐：
-Three Years Later, She Returns
-
-中文：
-真正的千金回来了
-推荐：
-The Real Heiress Is Back
-
-中文：
-他终于后悔了
-推荐：
-He Finally Regrets It
-
 # 文化适配规则
 
 1. 不要逐字硬翻中文网络梗，要转成英文观众能理解的表达。
@@ -504,24 +420,6 @@ He Finally Regrets It
 - 不要过度口语化
 - 不要使用复杂长从句
 
-推荐使用：
-- This time...
-- But then...
-- Just when...
-- What she doesn't know is...
-- Everything changes.
-- He finally realizes...
-- She won't back down.
-- The truth is finally exposed.
-- Now, it's her turn.
-
-谨慎使用：
-- gonna / wanna / kinda
-- bro / dude
-- slang
-- overly dramatic fantasy wording
-- long poetic sentences
-
 # 禁止事项
 
 1. 禁止改变人物关系。
@@ -534,7 +432,6 @@ He Finally Regrets It
 8. 禁止把“重生”“契约婚姻”“真假千金”“隐藏身份”等核心设定弱化。
 9. 禁止把所有称呼都直译成 Young Master 或 Madam，要根据现代/古风语境判断。
 10. 禁止使用观众难懂的拼音，除非是人名、地名或专有名词。
-11. 禁止使用 em dash、特殊引号或可能导致编码问题的符号；只使用普通 ASCII 标点。
 
 # 翻译示例
 
@@ -598,15 +495,6 @@ This time, she'll make everyone who hurt her pay.
 00:00:15,300 --> 00:00:19,000
 To save her, her master takes the heavenly tribulation for her.
 
-# 执行步骤
-
-1. 通读完整 SRT，判断题材类型：现代都市、霸总、重生、复仇、修仙、玄幻、甜宠、虐恋、家庭伦理等。
-2. 识别主要人物、人物关系和核心设定。
-3. 确定统一翻译风格和称呼方式。
-4. 按原 SRT 序号和时间轴逐条翻译。
-5. 每条字幕根据时间轴控制英文长度。
-6. 保留剧情关键点、情绪点、反转点和爽点。
-7. 最终只输出标准英文 SRT，不输出任何解释。
 
 【输出】
 只输出标准英文 SRT。
@@ -668,18 +556,6 @@ issue_types 当前只可能包含 too_long（TTS 明显超出字幕时长）和 
 - 若某条 en_text 与 zh_text 语义明显不符（主动/被动翻反、加害者/受害者翻反、人名被译成普通词），优先修误译，而不是为压时长把误译进一步缩短。
 - 没有提供 zh_text 时，不要猜测误译，只修时长/残句/语法问题。
 
-【触发修复规则】
-以下情况必须修复：
-
-1. tts_duration > duration * 1.15。
-2. wpm > 190。
-3. 英文是残句、关键词堆砌或缺少必要主谓宾。
-4. 明显误译或语义反转。
-5. 丢失关键身份、人物关系或核心设定。
-6. 丢失短剧关键爽点，例如重生、复仇、打脸、身份揭露、追妻火葬场、契约婚姻、真假千金等。
-7. 人名、称呼、身份翻译前后不一致。
-8. 相邻字幕重复同一短语，造成听感机械。
-9. 英文过于生硬，不适合 TTS 朗读。
 
 以下情况通常不修：
 
@@ -706,19 +582,8 @@ issue_types 当前只可能包含 too_long（TTS 明显超出字幕时长）和 
 * 如果 TTS 只略长，优先删 1-3 个弱信息词，不要重写整句；
 * 如果严重超长，进行语义压缩，但不能删核心剧情。
 
-【短剧型漫剧必须保留的信息】
-以下信息不能随意删除或泛化：
-
-1. 人物身份：总裁、夫人、少爷、小姐、师尊、徒弟、前夫、未婚妻、继母、真千金、假千金、继承人、赘婿等。
-2. 人物关系：夫妻、前任、师徒、亲生/收养、真假千金、主仆、上下级、仇人、暗恋等。
-3. 核心设定：重生、复仇、契约婚姻、隐藏身份、替身、联姻、豪门争斗、修仙境界、宗门矛盾、失忆、末世灾变、变异、避难所等。
-4. 剧情爽点：打脸、反击、身份暴露、男主护妻、女主黑化、反派陷害、角色后悔等。
-5. 情绪信息：震惊、愤怒、委屈、暧昧、反击、后悔、甜宠、虐恋等。
-6. 末世/科幻设定身份：灾兽、眷属（被异化的人类）、灾变名称、势力名等不能压成普通名词或过泛表达（如"眷属"不能压成 people/monsters）。
-
 【压缩原则】
 压缩时优先删除：
-
 1. well, just, really, actually, suddenly 等弱语气词；
 2. 重复称呼；
 3. 不影响剧情的形容词和副词；
@@ -727,7 +592,6 @@ issue_types 当前只可能包含 too_long（TTS 明显超出字幕时长）和 
 6. 过长的从句。
 
 压缩时必须保留：
-
 1. 主语；
 2. 谓语；
 3. 必要宾语；
@@ -743,23 +607,11 @@ issue_types 当前只可能包含 too_long（TTS 明显超出字幕时长）和 
 修改任一条目后，必须与相邻条目合读验证：
 1. 不要让上一条结尾和下一条开头重复同一短语。
 2. 不要删掉承接关系导致上下文断裂。
-3. 不要产生跨条目语法错误，例如上一条改后与下一条合读出现 "Civilization truly collapsed... were the disaster beasts..."（主语后接 were）。
+3. 不要产生跨条目语法错误。
 4. 若当前条目是连续句的下半句，修改后仍要能承接上一条。
 
 【短剧漫剧风格要求】
-整体英文要清楚、紧凑、有戏剧张力，适合海外短视频观众。
-
-推荐风格：
-
-* This time, she won't lose again.
-* He finally regrets it.
-* The truth is out.
-* She is the real heir.
-* Now, it's her turn.
-* He never expected her to fight back.
-* Everyone who hurt her will pay.
-
-避免风格：
+整体英文要清楚、紧凑、有戏剧张力，适合海外短视频观众。避免风格：
 
 * 过度文学化；
 * 过度正式；
@@ -781,25 +633,11 @@ issue_types 当前只可能包含 too_long（TTS 明显超出字幕时长）和 
 【残句修复规则】
 禁止输出以下类型：
 
-1. 只有名词短语：
-   Bad: The real daughter, back for revenge.
-   Good: The real daughter is back for revenge.
-
-2. 缺少主语：
-   Bad: Never expected to be reborn.
-   Good: She never expected to be reborn.
-
-3. 缺少谓语：
-   Bad: Everyone who hurt her.
-   Good: Everyone who hurt her will pay.
-
-4. 悬空从句：
-   Bad: Because he betrayed her.
-   Good: He betrayed her.
-
-5. 以冠词、介词、连词、be 动词或悬空代词结尾：
-   Bad: She was forced into a
-   Good: She was forced into a contract marriage.
+1. 只有名词短语
+2. 缺少主语
+3. 缺少谓语
+4. 悬空从句
+5. 以冠词、介词、连词、be 动词或悬空代词结尾
 
 【语法最低要求】
 为缩短而牺牲基本英语语法是禁止的：
@@ -827,23 +665,18 @@ issue_types 当前只可能包含 too_long（TTS 明显超出字幕时长）和 
 【相邻字幕连贯性】
 如果相邻问题条目原本组成连续句，可以适当重新分配语义，但不能：
 
-1. 重复同一开头；
-2. 重复同一结尾；
-3. 让上一条和下一条合读不通；
-4. 删除承接关系；
-5. 让代词失去指代对象。
+1. 让上一条和下一条合读不通；
+2. 删除承接关系；
+3. 让代词失去指代对象。
 
 如果只修改当前条目会导致上下文断裂，应在当前条目内部补足必要主语或指代。
 
-【标点与编码规则】
+【标点规则】
 
-1. 只使用普通 ASCII 标点。
-2. 不要使用 em dash。
-3. 不要使用特殊引号。
-4. 不要使用可能乱码的符号。
-5. 不要使用中文标点。
-6. 可以使用普通英文缩写，如 I'm, you're, he's, won't, can't。
-7. 不要过度使用 gonna, wanna, kinda，除非原文就是非常口语化的对白。
+1. 不要使用可能乱码的符号。
+2. 不要使用中文标点。
+3. 可以使用普通英文缩写，如 I'm, you're, he's, won't, can't。
+4. 不要过度使用 gonna, wanna, kinda，除非原文就是非常口语化的对白。
 
 【输出规则】
 
@@ -923,31 +756,6 @@ Good:
 #16: What truly collapsed civilization...
 #17: were the disaster beasts that appeared from nowhere.
 
-【压缩示例】
-
-Before:
-This time, she will make every single person who hurt her in the past pay the price.
-
-After:
-This time, everyone who hurt her will pay.
-
-Before:
-Everyone thought she was nothing but a fake daughter from the family.
-
-After:
-Everyone thought she was the fake daughter.
-
-Before:
-He suddenly realizes that the woman he abandoned was the one he truly loved.
-
-After:
-He finally realizes he loved the woman he abandoned.
-
-Before:
-She never expected that after being reborn, she would return to the night before the contract marriage.
-
-After:
-After being reborn, she returns to the night before the contract marriage.
 
 【最终输出】
 只输出 JSON 数组，例如：
