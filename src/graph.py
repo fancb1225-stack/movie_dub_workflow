@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterator, Protocol
+from typing import Any, Callable, Iterator, Protocol
 
 from src.nodes.audio_node import align_and_merge_audio
 from src.nodes.clean_srt_node import clean_srt
@@ -13,6 +13,7 @@ from src.nodes.summarize_node import summarize_plot
 from src.nodes.translate_node import translate_to_english
 from src.nodes.tts_duration_node import tts_generate_and_detect
 from src.state import WorkflowState
+from src.trace_collector import get_active_collector
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,22 @@ class RunnableWorkflow(Protocol):
 
     def stream(self, state: WorkflowState) -> Iterator[dict[str, WorkflowState]]:
         ...
+
+
+def with_trace(node_name: str, fn: Callable[[WorkflowState], WorkflowState]) -> Callable[[WorkflowState], WorkflowState]:
+    """Wrap a node so the active trace collector (if any) tracks the current node."""
+
+    def wrapped(state: WorkflowState) -> WorkflowState:
+        collector = get_active_collector()
+        if collector is None:
+            return fn(state)
+        collector.set_current_node(node_name)
+        try:
+            return fn(state)
+        finally:
+            collector.clear_current_node()
+
+    return wrapped
 
 
 def build_workflow(config: dict[str, Any], resume_from: str | None = None) -> RunnableWorkflow:
@@ -91,17 +108,17 @@ class SequentialWorkflow:
             if i < start_index:
                 continue
             logger.info("SequentialWorkflow: running node '%s'", name)
-            state = fn(state)
+            state = with_trace(name, fn)(state)
             logger.info("SequentialWorkflow: node '%s' completed", name)
             yield {name: state}
 
         while should_reflect_or_finish(state) == "reflect":
-            state = reflect_duration_issues(state)
+            state = with_trace("reflect_duration_issues", reflect_duration_issues)(state)
             yield {"reflect_duration_issues": state}
-            state = tts_generate_and_detect(state)
+            state = with_trace("tts_generate_and_detect", tts_generate_and_detect)(state)
             yield {"tts_generate_and_detect": state}
 
-        state = align_and_merge_audio(state)
+        state = with_trace("align_and_merge_audio", align_and_merge_audio)(state)
         yield {"align_and_merge_audio": state}
         return
 
@@ -112,15 +129,15 @@ def _build_langgraph_workflow(
     from langgraph.graph import END, StateGraph
 
     graph = StateGraph(WorkflowState)
-    graph.add_node("merge_zh_asr_srt", merge_zh_asr_srt)
-    graph.add_node("restitch_merge_cuts", restitch_merge_cuts)
-    graph.add_node("clean_srt", clean_srt)
-    graph.add_node("critic_srt", critic_srt)
-    graph.add_node("summarize_plot", summarize_plot)
-    graph.add_node("translate_to_english", translate_to_english)
-    graph.add_node("tts_generate_and_detect", tts_generate_and_detect)
-    graph.add_node("reflect_duration_issues", reflect_duration_issues)
-    graph.add_node("align_and_merge_audio", align_and_merge_audio)
+    graph.add_node("merge_zh_asr_srt", with_trace("merge_zh_asr_srt", merge_zh_asr_srt))
+    graph.add_node("restitch_merge_cuts", with_trace("restitch_merge_cuts", restitch_merge_cuts))
+    graph.add_node("clean_srt", with_trace("clean_srt", clean_srt))
+    graph.add_node("critic_srt", with_trace("critic_srt", critic_srt))
+    graph.add_node("summarize_plot", with_trace("summarize_plot", summarize_plot))
+    graph.add_node("translate_to_english", with_trace("translate_to_english", translate_to_english))
+    graph.add_node("tts_generate_and_detect", with_trace("tts_generate_and_detect", tts_generate_and_detect))
+    graph.add_node("reflect_duration_issues", with_trace("reflect_duration_issues", reflect_duration_issues))
+    graph.add_node("align_and_merge_audio", with_trace("align_and_merge_audio", align_and_merge_audio))
 
     entry_point = resume_from if resume_from in NODE_ORDER else "merge_zh_asr_srt"
     graph.set_entry_point(entry_point)

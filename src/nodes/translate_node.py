@@ -158,6 +158,8 @@ def _translate_chunk(
             translate_prompt,
             _build_translation_input(state, chunk_srt),
             fallback_srt if allow_fallback else "",
+            attempt=attempt + 1,
+            parent_call_id="translate_to_english",
         )
         try:
             translated_cues = _parse_translation_or_raise(translated_srt, chunk_cues)

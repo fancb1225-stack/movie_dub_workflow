@@ -87,7 +87,10 @@ def _merge_single(
     last_error: str | None = None
     for attempt in range(max_retries + 1):
         try:
-            response = client.complete(merge_prompt, fallback_srt, fallback_srt)
+            response = client.complete(
+                merge_prompt, fallback_srt, fallback_srt,
+                attempt=attempt + 1, parent_call_id=None,
+            )
             normalized_cues = _snap_timestamps_to_source_boundaries(
                 clean_cues(parse_srt(response)), raw_cues
             )
@@ -144,7 +147,10 @@ def _merge_chunk(
     last_error: str | None = None
     for attempt in range(max_retries + 1):
         try:
-            response = client.complete(merge_prompt, chunk_srt, chunk_srt)
+            response = client.complete(
+                merge_prompt, chunk_srt, chunk_srt,
+                attempt=attempt + 1, parent_call_id="merge_zh_asr_srt",
+            )
             normalized = _snap_timestamps_to_source_boundaries(
                 clean_cues(parse_srt(response)), chunk_cues
             )

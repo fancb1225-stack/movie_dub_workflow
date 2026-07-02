@@ -48,7 +48,7 @@ class TranslateNodeTests(unittest.TestCase):
                     return True
 
                 def complete(
-                    self, system_prompt: str, user_content: str, fallback_text: str
+                    self, system_prompt: str, user_content: str, fallback_text: str, **kwargs
                 ) -> str:
                     return "This is not an SRT response."
 
@@ -275,7 +275,7 @@ class FakeChunkClient:
     def enabled(self) -> bool:
         return True
 
-    def complete(self, system_prompt: str, user_content: str, fallback_text: str) -> str:
+    def complete(self, system_prompt: str, user_content: str, fallback_text: str, **kwargs) -> str:
         self.inputs.append(user_content)
         self.last_system_prompt = system_prompt
         index = self._next_index
@@ -300,7 +300,7 @@ class FakeRetryChunkClient:
     def enabled(self) -> bool:
         return True
 
-    def complete(self, system_prompt: str, user_content: str, fallback_text: str) -> str:
+    def complete(self, system_prompt: str, user_content: str, fallback_text: str, **kwargs) -> str:
         if user_content not in self._queues:
             spec = self._pending.pop(0) if self._pending else ""
             if isinstance(spec, list):

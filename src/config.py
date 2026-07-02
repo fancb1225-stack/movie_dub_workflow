@@ -147,6 +147,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "enable_overlap_resolution": True,
         "max_shift_forward_ms": 1000,
     },
+    "trace": {
+        "enabled": False,
+        "cases_dir": "eval/cases",
+    },
 }
 
 

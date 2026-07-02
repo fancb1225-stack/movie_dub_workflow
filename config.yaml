@@ -142,3 +142,7 @@ alignment:
   shift_back_gap_ms: 50
   enable_overlap_resolution: true
   max_shift_forward_ms: 1000
+
+trace:
+  enabled: false          # 工作流运行时是否采集 LLM 调用 trace(仅 LLM 真实启用时生效)
+  cases_dir: eval/cases   # 产出的 case 数据目录,可直接被 eval 框架加载
