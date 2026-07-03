@@ -45,14 +45,23 @@ speaker:
 video:
   copy_video: true
 
+tos:
+  endpoint: ""
+  region: ""
+  bucket: ""
+  access_key_id_env: DOUBAO_TOS_ACCESS_KEY_ID
+  secret_access_key_env: DOUBAO_TOS_SECRET_ACCESS_KEY
+  presign_expires: 3600
+  object_prefix: movie-dub/asr
+
 workflow:
   allow_mock_asr_for_jobs: false
   # Job ASR strategy is selected by video_type.
-  # movie_commentary: faster_whisper with a single default speaker_0.
-  # manju: whisperx with diarization.
-  movie_commentary_asr_provider: faster_whisper
+  # movie_commentary: doubao_file with a single default speaker_0.
+  # manju: doubao_file with enable_speaker_info.
+  movie_commentary_asr_provider: doubao_file
   movie_commentary_default_speaker_id: speaker_0
-  manju_asr_provider: whisperx
+  manju_asr_provider: doubao_file
 
 asr:
   provider: mock
@@ -62,6 +71,20 @@ asr:
   compute_type: int8
   vad_filter: true
   mock_when_missing_input: true
+  api_key_env: DOUBAO_ASR_API_KEY
+  resource_id: volc.seedasr.auc
+  submit_url: https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit
+  query_url: https://openspeech.bytedance.com/api/v3/auc/bigmodel/query
+  uid: movie_dub_workflow
+  audio_format: wav
+  http_timeout: 30
+  poll_interval: 2.0
+  max_query_attempts: 300
+  doubao_model_name: bigmodel
+  enable_itn: true
+  enable_punc: true
+  show_utterances: true
+  enable_speaker_info: false
   # whisperx 专属:
   hf_token_env: HF_TOKEN        # diarization 用的 HuggingFace token 环境变量名(需先在 HF 接受 pyannote 许可)
   diarize: true                 # 开启说话人分离

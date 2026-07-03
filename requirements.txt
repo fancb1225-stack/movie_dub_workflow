@@ -3,6 +3,7 @@ PyYAML>=6.0.2
 fastapi>=0.115.0
 uvicorn>=0.30.0
 python-multipart>=0.0.9
+tos>=2.8.0
 demucs>=4.0.1
 faster-whisper>=1.0.0
 # whisperx 多角色 ASR（diarization）。torch/torchaudio 在 Windows 上需用 PyTorch wheel 索引安装：

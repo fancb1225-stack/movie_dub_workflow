@@ -628,10 +628,12 @@ def _apply_video_type_asr_provider(config: dict[str, Any]) -> None:
     workflow_config = config.get("workflow", {})
     asr_config = config.setdefault("asr", {})
     if video_type == VIDEO_TYPE_MANJU:
-        asr_config["provider"] = str(workflow_config.get("manju_asr_provider", "whisperx"))
+        asr_config["provider"] = str(workflow_config.get("manju_asr_provider", "doubao_file"))
+        asr_config["enable_speaker_info"] = True
         asr_config.pop("default_speaker_id", None)
     elif video_type == VIDEO_TYPE_MOVIE_COMMENTARY:
-        asr_config["provider"] = str(workflow_config.get("movie_commentary_asr_provider", "faster_whisper"))
+        asr_config["provider"] = str(workflow_config.get("movie_commentary_asr_provider", "doubao_file"))
+        asr_config["enable_speaker_info"] = False
         asr_config["default_speaker_id"] = str(workflow_config.get("movie_commentary_default_speaker_id", "speaker_0"))
 
 

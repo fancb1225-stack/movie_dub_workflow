@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
 import os
+import time
 from pathlib import Path
 from typing import Any
+from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from src.state import SrtCue
 from src.tools.asr_words import (
@@ -13,6 +17,7 @@ from src.tools.asr_words import (
 from src.tools.duration_tools import get_audio_duration_ms
 from src.tools.file_tools import write_json
 from src.tools.srt_tools import format_srt, make_cue
+from src.tools.tos_tools import upload_file_to_tos
 
 
 def transcribe_mp3_to_srt(
@@ -37,6 +42,16 @@ def transcribe_mp3_to_srt(
     if provider == "faster_whisper":
         cues = _transcribe_with_faster_whisper(input_path, asr_config)
         _assign_default_speaker(cues, str(asr_config.get("default_speaker_id", "speaker_0")))
+    elif provider == "doubao_file":
+        cues, words = _transcribe_with_doubao_file(input_path, asr_config, config)
+        if not asr_config.get("enable_speaker_info", False):
+            _assign_default_speaker(cues, str(asr_config.get("default_speaker_id", "speaker_0")))
+            _assign_default_speaker_to_words(words, str(asr_config.get("default_speaker_id", "speaker_0")))
+        diarized = bool(asr_config.get("enable_speaker_info", False)) and any(
+            "speaker_id" in cue for cue in cues
+        )
+        if output_words_json is not None and words:
+            words_json_path = write_asr_words_json(output_words_json, words)
     elif provider == "whisperx":
         try:
             cues, words = _transcribe_with_whisperx(input_path, asr_config)
@@ -84,6 +99,13 @@ def _assign_default_speaker(cues: list[SrtCue], speaker_id: str) -> None:
         cue.setdefault("speaker_id", speaker_id)
 
 
+def _assign_default_speaker_to_words(words: list[dict[str, Any]], speaker_id: str) -> None:
+    if not speaker_id:
+        return
+    for word in words:
+        word.setdefault("speaker_id", speaker_id)
+
+
 def write_asr_report(path: str | Path, asr_result: dict[str, Any]) -> str:
     report = {
         "provider": asr_result.get("provider"),
@@ -128,6 +150,242 @@ def _normalize_speaker(label: str) -> str:
         return f"speaker_{num + 1}"
     except (ValueError, IndexError):
         return label
+
+def map_doubao_result_to_cues(
+    result: dict[str, Any], speaker_normalize: bool = True
+) -> list[SrtCue]:
+    payload = _doubao_result_payload(result)
+    utterances = payload.get("utterances") if isinstance(payload, dict) else None
+    cues: list[SrtCue] = []
+    if isinstance(utterances, list) and utterances:
+        for idx, utterance in enumerate(utterances, start=1):
+            if not isinstance(utterance, dict):
+                continue
+            start_ms = _coerce_int_ms(utterance.get("start_time"))
+            end_ms = _coerce_int_ms(utterance.get("end_time"))
+            cue = make_cue(
+                idx,
+                start_ms,
+                max(end_ms, start_ms + 1),
+                str(utterance.get("text", "")).strip(),
+            )
+            speaker = _doubao_speaker(utterance)
+            if speaker:
+                cue["speaker_id"] = _normalize_doubao_speaker(speaker) if speaker_normalize else speaker
+            cues.append(cue)
+        return cues
+
+    if isinstance(payload, dict) and payload.get("text"):
+        duration_ms = _coerce_int_ms(result.get("audio_info", {}).get("duration"))
+        return [make_cue(1, 0, max(duration_ms, 1), str(payload["text"]).strip())]
+    return []
+
+
+def extract_doubao_words(
+    result: dict[str, Any], speaker_normalize: bool = True
+) -> list[dict[str, Any]]:
+    payload = _doubao_result_payload(result)
+    utterances = payload.get("utterances") if isinstance(payload, dict) else None
+    if not isinstance(utterances, list):
+        return []
+    words: list[dict[str, Any]] = []
+    for utterance in utterances:
+        if not isinstance(utterance, dict):
+            continue
+        utterance_speaker = _doubao_speaker(utterance)
+        for raw_word in utterance.get("words", []) or []:
+            if not isinstance(raw_word, dict):
+                continue
+            speaker = _doubao_speaker(raw_word) or utterance_speaker
+            word: dict[str, Any] = {
+                "index": len(words) + 1,
+                "word": str(raw_word.get("word", raw_word.get("text", ""))).strip(),
+                "start_ms": _coerce_int_ms(raw_word.get("start_time")),
+                "end_ms": _coerce_int_ms(raw_word.get("end_time")),
+            }
+            if speaker:
+                word["speaker_id"] = _normalize_doubao_speaker(speaker) if speaker_normalize else speaker
+            words.append(word)
+    return words
+
+
+def _transcribe_with_doubao_file(
+    input_path: Path,
+    asr_config: dict[str, Any],
+    config: dict[str, Any],
+) -> tuple[list[SrtCue], list[dict[str, Any]]]:
+    if not input_path.exists():
+        raise FileNotFoundError(f"ASR input does not exist: {input_path}")
+    upload_prefix = str(asr_config.get("tos_object_prefix") or config.get("tos", {}).get("object_prefix", "asr"))
+    upload = upload_file_to_tos(input_path, config, object_prefix=upload_prefix)
+    result = _run_doubao_file_recognition(str(upload["url"]), asr_config)
+    return map_doubao_result_to_cues(result, speaker_normalize=True), extract_doubao_words(
+        result, speaker_normalize=True
+    )
+
+
+def _run_doubao_file_recognition(audio_url: str, asr_config: dict[str, Any]) -> dict[str, Any]:
+    task_id = str(uuid4())
+    _doubao_submit_task(audio_url, task_id, asr_config)
+    max_attempts = int(asr_config.get("max_query_attempts", 300))
+    poll_interval = float(asr_config.get("poll_interval", 2.0))
+    for _attempt in range(max_attempts):
+        status_code, message, payload = _doubao_query_task(task_id, asr_config)
+        if status_code == "20000000":
+            return payload
+        if status_code not in {"20000001", "20000002"}:
+            raise RuntimeError(f"Doubao ASR query failed: {status_code} {message}")
+        if poll_interval > 0:
+            time.sleep(poll_interval)
+    raise TimeoutError(f"Doubao ASR query timed out after {max_attempts} attempts.")
+
+
+def _doubao_submit_task(audio_url: str, task_id: str, asr_config: dict[str, Any]) -> None:
+    body = {
+        "user": {"uid": str(asr_config.get("uid", "movie_dub_workflow"))},
+        "audio": _doubao_audio_payload(audio_url, asr_config),
+        "request": _doubao_request_payload(asr_config),
+    }
+    request = _doubao_request(
+        str(asr_config.get("submit_url", "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit")),
+        task_id,
+        asr_config,
+        body,
+        include_sequence=True,
+    )
+    with urlopen(request, timeout=float(asr_config.get("http_timeout", 30))) as response:
+        status_code = str(response.getheader("X-Api-Status-Code", ""))
+        message = str(response.getheader("X-Api-Message", ""))
+    if status_code != "20000000":
+        raise RuntimeError(f"Doubao ASR submit failed: {status_code} {message}")
+
+
+def _doubao_query_task(
+    task_id: str, asr_config: dict[str, Any]
+) -> tuple[str, str, dict[str, Any]]:
+    request = _doubao_request(
+        str(asr_config.get("query_url", "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query")),
+        task_id,
+        asr_config,
+        {},
+        include_sequence=False,
+    )
+    with urlopen(request, timeout=float(asr_config.get("http_timeout", 30))) as response:
+        raw_body = response.read()
+        status_code = str(response.getheader("X-Api-Status-Code", ""))
+        message = str(response.getheader("X-Api-Message", ""))
+    payload = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+    return status_code, message, payload
+
+
+def _doubao_request(
+    url: str,
+    task_id: str,
+    asr_config: dict[str, Any],
+    body: dict[str, Any],
+    *,
+    include_sequence: bool,
+) -> Request:
+    api_key_env = str(asr_config.get("api_key_env", "DOUBAO_ASR_API_KEY"))
+    api_key = os.getenv(api_key_env, "")
+    if not api_key:
+        raise RuntimeError(f"Doubao ASR requires environment variable {api_key_env}.")
+    headers = {
+        "Content-Type": "application/json",
+        "X-Api-Key": api_key,
+        "X-Api-Resource-Id": str(asr_config.get("resource_id", "volc.seedasr.auc")),
+        "X-Api-Request-Id": task_id,
+    }
+    if include_sequence:
+        headers["X-Api-Sequence"] = "-1"
+    return Request(url, data=json.dumps(body).encode("utf-8"), headers=headers, method="POST")
+
+
+def _doubao_audio_payload(audio_url: str, asr_config: dict[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "format": str(asr_config.get("audio_format", "wav")),
+        "url": audio_url,
+    }
+    language = asr_config.get("language")
+    if language:
+        payload["language"] = _doubao_language(str(language))
+    for key in ("codec", "rate", "bits", "channel"):
+        value = asr_config.get(f"audio_{key}")
+        if value is not None:
+            payload[key] = value
+    return payload
+
+
+def _doubao_request_payload(asr_config: dict[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model_name": str(asr_config.get("doubao_model_name", "bigmodel")),
+        "enable_itn": bool(asr_config.get("enable_itn", True)),
+        "enable_punc": bool(asr_config.get("enable_punc", True)),
+        "show_utterances": bool(asr_config.get("show_utterances", True)),
+        "enable_speaker_info": bool(asr_config.get("enable_speaker_info", False)),
+    }
+    if payload["enable_speaker_info"] and asr_config.get("ssd_version"):
+        payload["ssd_version"] = str(asr_config["ssd_version"])
+    return payload
+
+
+def _doubao_language(language: str) -> str:
+    return {"zh": "zh-CN", "en": "en-US"}.get(language, language)
+
+
+def _doubao_result_payload(result: dict[str, Any]) -> dict[str, Any]:
+    payload = result.get("result", {})
+    if isinstance(payload, list):
+        first = payload[0] if payload else {}
+        return first if isinstance(first, dict) else {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _doubao_speaker(item: dict[str, Any]) -> str | None:
+    for key in ("speaker_id", "speaker", "speakerId"):
+        value = item.get(key)
+        if value not in (None, ""):
+            return str(value)
+    speaker_info = item.get("speaker_info")
+    if isinstance(speaker_info, dict):
+        for key in ("speaker_id", "speaker", "speakerId"):
+            value = speaker_info.get(key)
+            if value not in (None, ""):
+                return str(value)
+    additions = item.get("additions")
+    if isinstance(additions, str):
+        try:
+            additions = json.loads(additions)
+        except json.JSONDecodeError:
+            additions = {}
+    if isinstance(additions, dict):
+        for key in ("speaker_id", "speaker", "speakerId"):
+            value = additions.get(key)
+            if value not in (None, ""):
+                return str(value)
+    return None
+
+
+def _normalize_doubao_speaker(label: str) -> str:
+    normalized = label.strip()
+    if not normalized:
+        return normalized
+    lowered = normalized.lower()
+    if lowered.startswith("speaker_"):
+        return lowered
+    if normalized.upper().startswith("SPEAKER_"):
+        return _normalize_speaker(normalized.upper())
+    if normalized.isdigit():
+        number = int(normalized)
+        return f"speaker_{number if number > 0 else 1}"
+    return normalized
+
+
+def _coerce_int_ms(value: Any) -> int:
+    try:
+        return max(0, int(round(float(value))))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _ensure_ffmpeg_on_path(config: dict[str, Any]) -> None:
