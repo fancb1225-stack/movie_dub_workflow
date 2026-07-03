@@ -26,6 +26,9 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config_value(config, "asr.provider"), "mock")
         self.assertEqual(config_value(config, "asr.resource_id"), "volc.seedasr.auc")
         self.assertEqual(config_value(config, "tos.object_prefix"), "movie-dub/asr")
+        self.assertEqual(config_value(config, "tts.provider"), "doubao")
+        self.assertEqual(config_value(config, "tts.doubao.resource_id"), "seed-tts-2.0")
+        self.assertEqual(config_value(config, "tts.doubao.endpoint"), "https://openspeech.bytedance.com/api/v3/tts/unidirectional")
 
     def test_load_config_applies_tos_env_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

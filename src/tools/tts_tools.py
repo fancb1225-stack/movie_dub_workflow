@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import logging
 import math
@@ -113,7 +114,7 @@ def _generate_tts_segments_batch(
 ) -> list[TtsSegment]:
     if not cues:
         return []
-    max_workers = max(1, int(tts_config.get("concurrency", 25 if provider == "minimax" else 1)))
+    max_workers = max(1, int(tts_config.get("concurrency", 25 if provider in {"minimax", "doubao"} else 1)))
     if max_workers <= 1 or len(cues) <= 1:
         return [_generate_one_tts_segment(cue, directory, config, tts_config, provider) for cue in cues]
     results: dict[int, TtsSegment] = {0: _generate_one_tts_segment(cues[0], directory, config, tts_config, provider)}
@@ -141,6 +142,8 @@ def _generate_one_tts_segment(
             _generate_edge_tts(cue["text"], segment_path, tts_config)
         elif provider == "minimax":
             _generate_minimax_tts(cue["text"], segment_path, tts_config, speaker_profile)
+        elif provider == "doubao":
+            _generate_doubao_tts(cue["text"], segment_path, tts_config, speaker_profile)
         else:
             _generate_mock_audio(cue["text"], segment_path, tts_config)
         if not segment_path.exists():
@@ -309,6 +312,7 @@ def _tts_segment_signature(
     provider: str,
 ) -> str:
     minimax = _minimax_config(tts_config)
+    doubao = _doubao_config(tts_config)
     payload = {
         "index": cue["index"],
         "text": cue["text"],
@@ -327,6 +331,15 @@ def _tts_segment_signature(
             "base_url": minimax.get("base_url"),
             "create_path": minimax.get("create_path"),
         },
+        "doubao": {
+            "endpoint": doubao.get("endpoint"),
+            "resource_id": doubao.get("resource_id"),
+            "model": doubao.get("model"),
+            "format": doubao.get("format"),
+            "bit_rate": doubao.get("bit_rate"),
+            "explicit_language": doubao.get("explicit_language"),
+            "explicit_dialect": doubao.get("explicit_dialect"),
+        },
     }
     data = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
@@ -340,11 +353,13 @@ def _resolve_speaker_profile(cue: SrtCue, tts_config: dict[str, Any]) -> dict[st
         raw_profile = profiles.get(speaker_id) or profiles.get("default") or {}
         if isinstance(raw_profile, dict):
             profile = dict(raw_profile)
-    if not profile and str(tts_config.get("provider", "")).lower() == "minimax":
-        default_voice = _minimax_config(tts_config).get("default_voice_id") or tts_config.get("voice")
+    provider = str(tts_config.get("provider", "")).lower()
+    if not profile and provider in {"minimax", "doubao"}:
+        provider_config = _doubao_config(tts_config) if provider == "doubao" else _minimax_config(tts_config)
+        default_voice = provider_config.get("default_voice_id") or tts_config.get("voice")
         if default_voice:
             profile = {"voice_id": default_voice}
-    if str(tts_config.get("provider", "")).lower() == "minimax" and not profile.get("voice_id"):
+    if provider in {"minimax", "doubao"} and not profile.get("voice_id"):
         profile["voice_id"] = "Wise_Woman"
     if speaker_id != "default":
         profile.setdefault("speaker_id", speaker_id)
@@ -373,6 +388,11 @@ def _minimax_config(tts_config: dict[str, Any]) -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _doubao_config(tts_config: dict[str, Any]) -> dict[str, Any]:
+    raw = tts_config.get("doubao", {})
+    return raw if isinstance(raw, dict) else {}
+
+
 def _clean_config_value(value: Any) -> str:
     text = str(value or "").strip()
     if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
@@ -396,6 +416,159 @@ def _join_minimax_url(base_url: str, path: str, group_id: str = "") -> str:
             query.append(("GroupId", group_id))
         url = urllib.parse.urlunsplit(parsed._replace(query=urllib.parse.urlencode(query)))
     return url
+
+
+def _speed_to_doubao_rate(value: Any) -> int:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = 1.0
+    return max(-50, min(100, int(round((numeric - 1.0) * 100))))
+
+
+def _doubao_http_error(stage: str, exc: urllib.error.HTTPError) -> FatalTtsError:
+    body = exc.read().decode("utf-8", errors="replace")
+    message = f"Doubao TTS {stage} HTTP {exc.code} {exc.reason}"
+    if body.strip():
+        message = f"{message}: {body[:500]}"
+    return FatalTtsError(message)
+
+
+def _doubao_tts_chunks(raw_body: bytes) -> bytes:
+    if not raw_body:
+        return b""
+    stripped = raw_body.lstrip()
+    if stripped.startswith((b"{", b"[", b"data:")):
+        return b"".join(_doubao_tts_audio_chunks_from_text(raw_body.decode("utf-8", errors="replace")))
+    return raw_body
+
+
+def _doubao_tts_audio_chunks_from_text(text: str) -> list[bytes]:
+    chunks: list[bytes] = []
+    stripped = text.strip()
+    candidates: list[str] = []
+    if stripped.startswith("{"):
+        try:
+            json.loads(stripped)
+            candidates = [stripped]
+        except json.JSONDecodeError:
+            candidates = [line.strip() for line in text.splitlines() if line.strip()]
+    elif stripped.startswith("["):
+        parsed = json.loads(stripped)
+        if not isinstance(parsed, list):
+            raise RuntimeError("Doubao TTS returned non-list JSON array.")
+        candidates = [json.dumps(item, ensure_ascii=False) for item in parsed]
+    else:
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("data:"):
+                line = line[len("data:"):].strip()
+            if line and line != "[DONE]":
+                candidates.append(line)
+    for candidate in candidates:
+        payload = json.loads(candidate)
+        if not isinstance(payload, dict):
+            continue
+        code = payload.get("code", 0)
+        if code not in (0, "0", None):
+            raise FatalTtsError(f"Doubao TTS returned code {code}: {payload.get('message', '')}")
+        data = payload.get("data")
+        if isinstance(data, str) and data:
+            chunks.append(base64.b64decode(data))
+    return chunks
+
+
+def _generate_doubao_tts(
+    text: str,
+    output_path: Path,
+    tts_config: dict[str, Any],
+    speaker_profile: dict[str, Any],
+) -> None:
+    doubao = _doubao_config(tts_config)
+    api_key_env = str(doubao.get("api_key_env", "DOUBAO_TTS_API_KEY"))
+    api_key = _clean_config_value(os.getenv(api_key_env, ""))
+    if not api_key and api_key_env != "DOUBAO_ASR_API_KEY":
+        api_key = _clean_config_value(os.getenv("DOUBAO_ASR_API_KEY", ""))
+    if not api_key:
+        raise RuntimeError(f"TTS provider doubao requires {api_key_env} or DOUBAO_ASR_API_KEY.")
+    model_env = str(doubao.get("model_env", "TTS_MODEL"))
+    model = _clean_config_value(os.getenv(model_env, "")) or _clean_config_value(doubao.get("model", "seed-tts-2.0-standard"))
+    voice_id = _clean_config_value(speaker_profile.get("voice_id") or doubao.get("default_voice_id") or tts_config.get("voice") or "Wise_Woman")
+    if not voice_id:
+        raise RuntimeError("TTS provider doubao requires voice_id for speaker profile.")
+
+    audio_format = str(doubao.get("format", output_path.suffix.lstrip(".") or "mp3"))
+    audio_params: dict[str, Any] = {
+        "format": audio_format,
+        "sample_rate": int(tts_config.get("sample_rate", doubao.get("sample_rate", 24000))),
+        "speech_rate": _speed_to_doubao_rate(speaker_profile.get("speed", 1.0)),
+        "loudness_rate": _speed_to_doubao_rate(speaker_profile.get("volume", speaker_profile.get("vol", 1.0))),
+        "enable_subtitle": bool(doubao.get("enable_subtitle", False)),
+    }
+    if audio_format == "mp3":
+        audio_params["bit_rate"] = int(doubao.get("bit_rate", doubao.get("bitrate", 128000)))
+    for key in (
+        "silence_duration",
+        "disable_markdown_filter",
+        "disable_emoji_filter",
+        "enable_latex_tn",
+        "latex_parser",
+        "explicit_language",
+        "explicit_dialect",
+        "aigc_watermark",
+    ):
+        value = doubao.get(key)
+        if value not in (None, ""):
+            audio_params[key] = value
+
+    req_params: dict[str, Any] = {
+        "text": text,
+        "speaker": voice_id,
+        "model": model,
+        "audio_params": audio_params,
+    }
+    pitch = speaker_profile.get("pitch", doubao.get("pitch"))
+    if pitch not in (None, ""):
+        req_params["post_process"] = {"pitch": int(float(pitch))}
+    context_texts = speaker_profile.get("context_texts") or doubao.get("context_texts")
+    if context_texts:
+        req_params["context_texts"] = context_texts
+    section_id = speaker_profile.get("section_id") or doubao.get("section_id")
+    if section_id:
+        req_params["section_id"] = str(section_id)
+
+    payload = {"req_params": req_params}
+    request_id = hashlib.sha256(f"{time.time_ns()}:{text[:80]}".encode("utf-8")).hexdigest()
+    headers = {
+        "Content-Type": "application/json",
+        "X-Api-Key": api_key,
+        "X-Api-Resource-Id": str(doubao.get("resource_id", "seed-tts-2.0")),
+        "X-Api-Request-Id": request_id,
+    }
+    if bool(doubao.get("require_usage_tokens", False)):
+        headers["X-Control-Require-Usage-Tokens-Return"] = "*"
+    endpoint = str(doubao.get("endpoint", "https://openspeech.bytedance.com/api/v3/tts/unidirectional"))
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    timeout = float(doubao.get("timeout", 60))
+    try:
+        response_context = urllib.request.urlopen(request, timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        raise _doubao_http_error("synthesis", exc) from exc
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    part_path = output_path.with_name(f"{output_path.name}.part")
+    with response_context as response:
+        audio = _doubao_tts_chunks(response.read())
+    if not audio:
+        raise RuntimeError("Doubao TTS returned no audio data.")
+    part_path.write_bytes(audio)
+    part_path.replace(output_path)
 
 
 def _find_first(data: Any, names: set[str]) -> Any:

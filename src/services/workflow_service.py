@@ -777,6 +777,8 @@ def _apply_overrides(config: dict[str, Any], overrides: dict[str, Any] | None) -
 def _workflow_hint(error: str) -> str:
     lowered = error.lower()
     if "doubao" in lowered or "asr" in lowered:
+        if "tts" in lowered and "asr" not in lowered:
+            return "豆包 TTS 请求失败。请检查 DOUBAO_TTS_API_KEY/DOUBAO_ASR_API_KEY、seed-tts-2.0 权限、音色 ID 和火山引擎权限。"
         return "豆包 ASR 请求失败。请检查 DOUBAO_ASR_API_KEY、TOS 配置、音频公网 URL 和火山引擎权限。"
     if "access_denied" in lowered or "ip" in lowered and "允许访问" in error:
         if "minimax" in lowered or "tts" in lowered:

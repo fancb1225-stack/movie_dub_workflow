@@ -106,8 +106,8 @@ srt:
   merge_max_duration_ms: 6500
 
 tts:
-  provider: minimax
-  voice: ""
+  provider: doubao
+  voice: Wise_Woman
   rate: "+40%"
   sample_rate: 24000
   words_per_minute: 155
@@ -115,6 +115,25 @@ tts:
   concurrency: 25
   pause_before_tts: true
   speaker_profiles: {}
+  doubao:
+    api_key_env: DOUBAO_TTS_API_KEY
+    endpoint: https://openspeech.bytedance.com/api/v3/tts/unidirectional
+    resource_id: seed-tts-2.0
+    model_env: TTS_MODEL
+    model: seed-tts-2.0-standard
+    default_voice_id: Wise_Woman
+    format: mp3
+    sample_rate: 24000
+    bit_rate: 128000
+    timeout: 60
+    enable_subtitle: false
+    require_usage_tokens: false
+    explicit_language: ""
+    explicit_dialect: ""
+    silence_duration: 0
+    disable_markdown_filter: false
+    disable_emoji_filter: false
+    aigc_watermark: false
   minimax:
     api_key_env: LLM_API_KEY
     group_id_env: MINIMAX_GROUP_ID

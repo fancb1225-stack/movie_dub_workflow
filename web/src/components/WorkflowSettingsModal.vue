@@ -20,7 +20,7 @@ const form = reactive<WorkflowOverrides>({
   llm_timeout: 600,
   llm_max_retries: 1,
   tts_rate: 1.3,
-  tts_provider: "minimax",
+  tts_provider: "doubao",
   speaker_profiles: {}
 });
 

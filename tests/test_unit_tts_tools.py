@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import os
 import tempfile
 import unittest
@@ -11,6 +13,7 @@ from src.tools.tts_tools import (
     FatalTtsError,
     _build_success_tts_segment,
     _build_tts_segment_manifest,
+    _generate_doubao_tts,
     _generate_edge_tts,
     _generate_minimax_tts,
     _minimax_request_json,
@@ -245,6 +248,84 @@ class TtsToolsTests(unittest.TestCase):
                 )
 
         self.assertEqual(calls[0]["rate"], "+10%")
+
+    def test_doubao_tts_posts_official_headers_and_writes_audio_chunks(self) -> None:
+        requests = []
+        audio_a = b"audio-a"
+        audio_b = b"audio-b"
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                rows = [
+                    {"code": 0, "message": "ok", "data": base64.b64encode(audio_a).decode("ascii")},
+                    {"code": 0, "message": "ok", "data": base64.b64encode(audio_b).decode("ascii")},
+                ]
+                return "\n".join(json.dumps(row) for row in rows).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            requests.append(request)
+            return FakeResponse()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "segment.mp3"
+            with patch.dict(os.environ, {"DOUBAO_TTS_API_KEY": "tts-key"}, clear=False), \
+                patch("urllib.request.urlopen", side_effect=fake_urlopen):
+                _generate_doubao_tts(
+                    "hello",
+                    output,
+                    {
+                        "sample_rate": 24000,
+                        "doubao": {
+                            "api_key_env": "DOUBAO_TTS_API_KEY",
+                            "endpoint": "https://openspeech.bytedance.com/api/v3/tts/unidirectional",
+                            "resource_id": "seed-tts-2.0",
+                            "model": "seed-tts-2.0-standard",
+                            "format": "mp3",
+                            "bit_rate": 128000,
+                            "timeout": 10,
+                            "require_usage_tokens": True,
+                        },
+                    },
+                    {"voice_id": "Wise_Woman", "speed": 1.3, "volume": 1.1, "pitch": 2},
+                )
+            self.assertEqual(output.read_bytes(), audio_a + audio_b)
+
+        self.assertEqual(len(requests), 1)
+        request = requests[0]
+        headers = {key.lower(): value for key, value in request.header_items()}
+        self.assertEqual(request.full_url, "https://openspeech.bytedance.com/api/v3/tts/unidirectional")
+        self.assertEqual(headers["x-api-key"], "tts-key")
+        self.assertEqual(headers["x-api-resource-id"], "seed-tts-2.0")
+        self.assertIn("x-api-request-id", headers)
+        self.assertEqual(headers["x-control-require-usage-tokens-return"], "*")
+        body = json.loads(request.data.decode("utf-8"))
+        req_params = body["req_params"]
+        self.assertEqual(req_params["text"], "hello")
+        self.assertEqual(req_params["speaker"], "Wise_Woman")
+        self.assertEqual(req_params["model"], "seed-tts-2.0-standard")
+        self.assertEqual(req_params["audio_params"]["format"], "mp3")
+        self.assertEqual(req_params["audio_params"]["sample_rate"], 24000)
+        self.assertEqual(req_params["audio_params"]["speech_rate"], 30)
+        self.assertEqual(req_params["audio_params"]["loudness_rate"], 10)
+        self.assertEqual(req_params["post_process"]["pitch"], 2)
+
+    def test_doubao_tts_requires_api_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, "DOUBAO_TTS_API_KEY"):
+                    _generate_doubao_tts(
+                        "hello",
+                        Path(tmp) / "segment.mp3",
+                        {"doubao": {"api_key_env": "DOUBAO_TTS_API_KEY"}},
+                        {"voice_id": "Wise_Woman"},
+                    )
+
     def test_generate_segments_preserves_speaker_and_profile_metadata(self) -> None:
         cues = [
             {
