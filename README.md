@@ -61,8 +61,8 @@ Web/job LangGraph 工作流使用当前 job 的 `vocals.wav` 作为 ASR 输入�
 
 项目支持面向影视解说/漫剧的 ASR 配置：
 
-- 影视解说默认可使用 `faster_whisper`。
-- 漫剧可使用 `whisperx`，并支持词级时间戳和 diarization 结果。
+- 影视解说默认使用豆包语音文件识别，按单说话人处理。
+- 漫剧默认使用豆包语音文件识别，并开启多说话人参数。
 - ASR 产物包括：
   - `zh_raw.srt`：原始中文字幕。
   - `zh_raw.words.json`：词级时间戳、说话人等结构化结果。
@@ -313,7 +313,8 @@ GET  /api/jobs/{job_id}/media/probe
 POST /api/jobs/{job_id}/media/extract-audio
 POST /api/jobs/{job_id}/audio/separate
 POST /api/jobs/{job_id}/audio/background
-POST /api/jobs/{job_id}/speakers/identify
+GET  /api/asr/settings
+POST /api/jobs/{job_id}/asr
 POST /api/jobs/{job_id}/workflow/langgraph
 POST /api/jobs/{job_id}/workflow/langgraph/resume
 POST /api/jobs/{job_id}/video/package
@@ -361,7 +362,7 @@ docker build -t movie-dub-workflow .
 docker run --rm -p 8000:8000 --env-file .env -v ${PWD}/outputs:/app/outputs movie-dub-workflow
 ```
 
-对于 GPU ASR/TTS 工作负载，需要在派生镜像中安装 CUDA 版 PyTorch/WhisperX，并使用 NVIDIA runtime 运行 Docker。
+ASR 使用豆包语音文件识别和 TOS/公网 URL，不需要本地 ASR 或 CUDA 运行时。
 
 ## 开发与验证
 

@@ -39,9 +39,6 @@ separation:
   overlap: 0.1
   segment: 7.5
 
-speaker:
-  mode: placeholder
-
 video:
   copy_video: true
 
@@ -65,11 +62,7 @@ workflow:
 
 asr:
   provider: mock
-  model_name: small
-  language: zh
-  device: cpu
-  compute_type: int8
-  vad_filter: true
+  language: ""
   mock_when_missing_input: true
   api_key_env: DOUBAO_ASR_API_KEY
   resource_id: volc.seedasr.auc
@@ -82,19 +75,10 @@ asr:
   max_query_attempts: 300
   doubao_model_name: bigmodel
   enable_itn: true
-  enable_punc: true
+  enable_punc: false
+  enable_ddc: false
   show_utterances: true
   enable_speaker_info: false
-  # whisperx 专属:
-  hf_token_env: HF_TOKEN        # diarization 用的 HuggingFace token 环境变量名(需先在 HF 接受 pyannote 许可)
-  diarize: true                 # 开启说话人分离
-  min_speakers: 1
-  max_speakers: 4
-  batch_size: 8
-  align: true                   # 词级对齐
-  align_strict: false           # align 失败时是否直接失败; false 时退回 segment 级并记录诊断
-  diarize_fallback_to_asr: false # diarization 失败时退回纯 ASR(无 speaker_id)
-  whisperx_missing_dep_fallback: false  # whisperx 缺依赖时是否回退 faster_whisper
   srt_emit_speaker: true       # SRT 文件是否输出 [speaker_1] 前缀
   word_cue_max_duration_ms: 6000  # 词级切短句:单条最大时长(ms)
   word_cue_max_chars: 30          # 词级切短句:单条最大字数

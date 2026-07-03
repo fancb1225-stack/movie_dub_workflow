@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildSpeakerProfilesWithDefault, isWorkflowResumable } from "../src/composables/useWorkflow.js";
+import { buildSpeakerProfilesWithDefault, compactAsrOptions, isWorkflowResumable } from "../src/composables/useWorkflow.js";
 import type { Job } from "../src/types/api.js";
 
 function job(status: string, overrides: Partial<Job> = {}): Job {
@@ -66,6 +66,28 @@ test("buildSpeakerProfilesWithDefault preserves existing speaker and default cho
       speaker_1: "Deep_Voice_Man",
       speaker_2: "Wise_Woman",
       default: "Calm_Woman"
+    }
+  );
+});
+
+test("compactAsrOptions omits blank language and keeps ASR controls", () => {
+  assert.deepEqual(
+    compactAsrOptions({
+      language: " ",
+      enable_punc: false,
+      enable_itn: true,
+      enable_ddc: true,
+      enable_speaker_info: true,
+      max_query_attempts: 8,
+      poll_interval_seconds: 0.5
+    }),
+    {
+      enable_punc: false,
+      enable_itn: true,
+      enable_ddc: true,
+      enable_speaker_info: true,
+      max_query_attempts: 8,
+      poll_interval_seconds: 0.5
     }
   );
 });

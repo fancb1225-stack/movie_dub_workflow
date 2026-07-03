@@ -13,7 +13,9 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(config_value(config, "server.host"), "127.0.0.1")
         self.assertEqual(config_value(config, "jobs.root_dir"), "outputs/jobs")
-        self.assertEqual(config_value(config, "speaker.mode"), "placeholder")
+        self.assertEqual(config_value(config, "asr.provider"), "mock")
+        self.assertEqual(config_value(config, "asr.resource_id"), "volc.seedasr.auc")
+        self.assertEqual(config_value(config, "tos.object_prefix"), "movie-dub/asr")
 
     def test_resolve_path_uses_project_root_for_relative_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -37,4 +39,3 @@ class ConfigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

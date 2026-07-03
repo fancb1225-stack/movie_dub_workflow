@@ -89,11 +89,11 @@ class WorkflowService:
         self.jobs.update_job(job_id, status="preprocessed")
         yield {"event": "done", "hint": "预处理完成。可以执行 ASR 语音识别。"}
 
-    def run_job_asr(self, job_id: str) -> dict[str, Any]:
+    def run_job_asr(self, job_id: str, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         job = self.jobs.get_job(job_id)
         background_audio = _resolve_background_audio(job)
         job_config = _job_workflow_config(self.config, job, background_audio)
-        raw_asr = _run_job_asr(job_id, job, job_config, self.jobs)
+        raw_asr = _run_job_asr(job_id, job, job_config, self.jobs, overrides=overrides)
         return _asr_response(job_id, raw_asr, self.jobs.get_job(job_id))
 
     def run_job_langgraph_workflow(self, job_id: str, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -432,11 +432,13 @@ def _run_job_asr(
     job: dict[str, Any],
     job_config: dict[str, Any],
     jobs: JobService,
+    overrides: dict[str, Any] | None = None,
 ) -> tuple[Path, str]:
     vocals_path = _resolve_vocals_audio(job)
     if vocals_path is None:
         raise RuntimeError("找不到人声音频文件。请先执行预处理完成人声/背景分离。")
     _apply_video_type_asr_provider(job_config)
+    _apply_asr_runtime_overrides(job_config, overrides)
     _ensure_job_mock_asr_allowed(job_config)
     job_config["paths"]["input_mp3"] = str(vocals_path)
     output_words_json = Path(job_config["paths"]["asr_words"])
@@ -637,6 +639,30 @@ def _apply_video_type_asr_provider(config: dict[str, Any]) -> None:
         asr_config["default_speaker_id"] = str(workflow_config.get("movie_commentary_default_speaker_id", "speaker_0"))
 
 
+def _apply_asr_runtime_overrides(config: dict[str, Any], overrides: dict[str, Any] | None) -> None:
+    if not overrides:
+        return
+    allowed = {
+        "asr.language",
+        "asr.enable_punc",
+        "asr.enable_itn",
+        "asr.enable_ddc",
+        "asr.enable_speaker_info",
+        "asr.max_query_attempts",
+        "asr.poll_interval",
+    }
+    _apply_overrides(config, {key: value for key, value in overrides.items() if key in allowed})
+    asr_config = config.setdefault("asr", {})
+    asr_config["provider"] = "doubao_file"
+    if bool(asr_config.get("enable_speaker_info", False)):
+        asr_config.pop("default_speaker_id", None)
+    else:
+        workflow_config = config.get("workflow", {})
+        asr_config["default_speaker_id"] = str(
+            workflow_config.get("movie_commentary_default_speaker_id", "speaker_0")
+        )
+
+
 def _ensure_job_mock_asr_allowed(config: dict[str, Any]) -> None:
     provider = str(config.get("asr", {}).get("provider", "mock")).lower()
     allow_mock = bool(config.get("workflow", {}).get("allow_mock_asr_for_jobs", False))
@@ -750,17 +776,8 @@ def _apply_overrides(config: dict[str, Any], overrides: dict[str, Any] | None) -
 
 def _workflow_hint(error: str) -> str:
     lowered = error.lower()
-    if "cublas" in lowered or "cuda" in lowered or "cudnn" in lowered:
-        return (
-            "faster-whisper 正在尝试使用 CUDA，但当前 Windows 环境缺少 CUDA/CUBLAS DLL。"
-            "请将 config.yaml 的 asr.device 设为 cpu、asr.compute_type 设为 int8，"
-            "然后重启 API 后重试。"
-        )
-    if "faster_whisper" in lowered or "whisper" in lowered:
-        return (
-            "页面触发的 job 工作流默认不再使用 mock ASR。请安装 faster-whisper，"
-            "或在 config.yaml 中将 workflow.allow_mock_asr_for_jobs 设为 true 仅用于测试。"
-        )
+    if "doubao" in lowered or "asr" in lowered:
+        return "豆包 ASR 请求失败。请检查 DOUBAO_ASR_API_KEY、TOS 配置、音频公网 URL 和火山引擎权限。"
     if "access_denied" in lowered or "ip" in lowered and "允许访问" in error:
         if "minimax" in lowered or "tts" in lowered:
             return (

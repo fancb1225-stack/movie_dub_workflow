@@ -5,11 +5,5 @@ uvicorn>=0.30.0
 python-multipart>=0.0.9
 tos>=2.8.0
 demucs>=4.0.1
-faster-whisper>=1.0.0
-# whisperx 多角色 ASR（diarization）。torch/torchaudio 在 Windows 上需用 PyTorch wheel 索引安装：
-#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-torch>=2.1.0
-torchaudio>=2.1.0
-whisperx>=3.1.0
 pytest>=8.0.0
 httpx>=0.27.0

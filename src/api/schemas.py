@@ -58,14 +58,28 @@ class BackgroundResponse(BaseModel):
     hint: str | None = None
 
 
-class SpeakerResponse(BaseModel):
-    job_id: str
-    mode: str
-    status: str
-    speaker_count: int
-    segment_count: int
-    source: str
-    segments: list[dict[str, Any]]
+class AsrRunOptions(BaseModel):
+    language: str | None = None
+    enable_punc: bool | None = None
+    enable_itn: bool | None = None
+    enable_ddc: bool | None = None
+    enable_speaker_info: bool | None = None
+    max_query_attempts: int | None = Field(None, ge=1)
+    poll_interval_seconds: float | None = Field(None, ge=0)
+
+
+class AsrRunRequest(BaseModel):
+    asr: AsrRunOptions | None = None
+
+
+class AsrSettingsResponse(BaseModel):
+    provider: str
+    video_type: str
+    defaults: dict[str, Any]
+    fields: dict[str, dict[str, Any]]
+    language_options: list[dict[str, str]]
+    tos: dict[str, Any]
+    official: dict[str, str]
 
 
 class AsrResponse(BaseModel):

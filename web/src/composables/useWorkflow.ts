@@ -1,6 +1,6 @@
 import { computed, ref, type Ref } from "vue";
 import { listJobFiles, listTtsVoices, requestJson, streamEvents } from "../api/client";
-import type { Job, StepState, VoiceOption, WorkflowEvent, WorkflowOverrides } from "../types/api";
+import type { AsrRunOptions, AsrSettingsResponse, Job, StepState, VoiceOption, WorkflowEvent, WorkflowOverrides } from "../types/api";
 import {
   applyWorkflowEventToSteps,
   cloneSteps,
@@ -22,7 +22,6 @@ export function isWorkflowResumable(job: Job | null | undefined): boolean {
   if (!job) return false;
   if (job.status === "langgraph_paused" || job.status === "langgraph_failed") return true;
   if (job.status !== "failed") return false;
-
   return Boolean(
     job.extra?.langgraph_workflow_report ||
       job.extra?.langgraph_progress ||
@@ -37,6 +36,17 @@ export function buildSpeakerProfilesWithDefault(
 ): Record<string, string> {
   const keys = Array.from(new Set([...speakers.filter(Boolean), "default"]));
   return Object.fromEntries(keys.map((speaker) => [speaker, existingProfiles[speaker] || defaultVoice]));
+}
+
+export function compactAsrOptions(options: AsrRunOptions): AsrRunOptions {
+  const compact: AsrRunOptions = {};
+  if (options.language?.trim()) compact.language = options.language.trim();
+  for (const key of ["enable_punc", "enable_itn", "enable_ddc", "enable_speaker_info"] as const) {
+    if (options[key] !== undefined) compact[key] = options[key];
+  }
+  if (options.max_query_attempts !== undefined) compact.max_query_attempts = options.max_query_attempts;
+  if (options.poll_interval_seconds !== undefined) compact.poll_interval_seconds = options.poll_interval_seconds;
+  return compact;
 }
 
 export function useWorkflow(
@@ -54,6 +64,8 @@ export function useWorkflow(
   const running = ref(false);
   const operationStartedAt = ref<number | null>(null);
   const settingsOpen = ref(false);
+  const asrSettingsOpen = ref(false);
+  const asrSettings = ref<AsrSettingsResponse | null>(null);
   const settingsMode = ref<"run" | "resume">("run");
   const speakerProfiles = ref<Record<string, string>>({ default: "Wise_Woman" });
   const overrides = ref<WorkflowOverrides>({
@@ -155,7 +167,7 @@ export function useWorkflow(
     }
   }
 
-  async function runAsr(): Promise<void> {
+  async function runAsr(options: AsrRunOptions = {}): Promise<void> {
     if (!job.value) return;
     running.value = true;
     startTiming();
@@ -166,7 +178,11 @@ export function useWorkflow(
       workflowSteps.value = next;
     }
     try {
-      const data = await requestJson<WorkflowEvent>(apiBase.value, `/api/jobs/${job.value.job_id}/asr`, { method: "POST" });
+      const data = await requestJson<WorkflowEvent>(apiBase.value, `/api/jobs/${job.value.job_id}/asr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asr: compactAsrOptions(options) })
+      });
       const next = [...workflowSteps.value];
       const asrIndex = next.findIndex((step) => step.key === "asr");
       if (asrIndex >= 0) {
@@ -193,44 +209,6 @@ export function useWorkflow(
     }
   }
 
-  async function runSpeakerIdentify(): Promise<void> {
-    if (!job.value) return;
-    running.value = true;
-    startTiming();
-    const index = workflowSteps.value.findIndex((step) => step.key === "speakers");
-    if (index >= 0) {
-      const next = [...workflowSteps.value];
-      next[index] = { ...next[index], kind: "running", status: "执行中" };
-      workflowSteps.value = next;
-    }
-    try {
-      const data = await requestJson<WorkflowEvent>(apiBase.value, `/api/jobs/${job.value.job_id}/speakers/identify`, { method: "POST" });
-      const next = [...workflowSteps.value];
-      const speakerIndex = next.findIndex((step) => step.key === "speakers");
-      if (speakerIndex >= 0) {
-        next[speakerIndex] = { ...next[speakerIndex], kind: "done", status: "完成" };
-        workflowSteps.value = next;
-      }
-      appendLog("说话人识别完成");
-      setMessage("说话人识别完成", "ok");
-      setOutput(data);
-      await refreshJob();
-      await refreshFiles();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const next = [...workflowSteps.value];
-      const speakerIndex = next.findIndex((step) => step.key === "speakers");
-      if (speakerIndex >= 0) {
-        next[speakerIndex] = { ...next[speakerIndex], kind: "error", status: "失败" };
-        workflowSteps.value = next;
-      }
-      appendLog(message);
-      throw error;
-    } finally {
-      running.value = false;
-    }
-  }
-
   function openSettings(mode: "run" | "resume"): void {
     settingsMode.value = mode;
     settingsOpen.value = true;
@@ -238,6 +216,25 @@ export function useWorkflow(
 
   function closeSettings(): void {
     settingsOpen.value = false;
+  }
+
+  async function loadAsrSettings(): Promise<void> {
+    const videoType = job.value?.video_type ? `?video_type=${encodeURIComponent(String(job.value.video_type))}` : "";
+    asrSettings.value = await requestJson<AsrSettingsResponse>(apiBase.value, `/api/asr/settings${videoType}`);
+  }
+
+  async function openAsrSettings(): Promise<void> {
+    await loadAsrSettings();
+    asrSettingsOpen.value = true;
+  }
+
+  function closeAsrSettings(): void {
+    asrSettingsOpen.value = false;
+  }
+
+  async function submitAsrSettings(value: AsrRunOptions): Promise<void> {
+    closeAsrSettings();
+    await runAsr(value);
   }
 
   async function loadVoiceOptions(): Promise<void> {
@@ -324,6 +321,8 @@ export function useWorkflow(
     logLines,
     running,
     settingsOpen,
+    asrSettingsOpen,
+    asrSettings,
     settingsMode,
     speakerProfiles,
     overrides,
@@ -331,10 +330,12 @@ export function useWorkflow(
     voiceOptions,
     runPreprocess,
     runAsr,
-    runSpeakerIdentify,
     clearLog,
     openSettings,
     closeSettings,
+    openAsrSettings,
+    closeAsrSettings,
+    submitAsrSettings,
     submitSettings,
     loadSpeakerProfiles,
     loadVoiceOptions

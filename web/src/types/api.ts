@@ -64,6 +64,53 @@ export interface WorkflowOverrides {
   speaker_profiles: Record<string, string>;
 }
 
+export interface AsrRunOptions {
+  language?: string;
+  enable_punc?: boolean;
+  enable_itn?: boolean;
+  enable_ddc?: boolean;
+  enable_speaker_info?: boolean;
+  max_query_attempts?: number;
+  poll_interval_seconds?: number;
+}
+
+export interface AsrFieldMeta {
+  label: string;
+  required: boolean;
+  fixed?: boolean;
+  allow_empty?: boolean;
+  official_default?: boolean;
+  app_default?: number;
+  empty_behavior?: string;
+  source?: string;
+  app_reason?: string;
+  official_values?: string[];
+}
+
+export interface AsrSettingsResponse {
+  provider: string;
+  video_type: string;
+  defaults: Required<AsrRunOptions> & {
+    audio_format: string;
+    model_name: string;
+    show_utterances: boolean;
+  };
+  fields: Record<string, AsrFieldMeta>;
+  language_options: Array<{ value: string; label: string }>;
+  tos: {
+    ready: boolean;
+    endpoint: string;
+    region: string;
+    bucket: string;
+    object_prefix: string;
+    access_key_id_env: string;
+    secret_access_key_env: string;
+    configured: Record<string, boolean>;
+    missing: string[];
+  };
+  official: Record<string, string>;
+}
+
 export interface StepState {
   key: string;
   label: string;

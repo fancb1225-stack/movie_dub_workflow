@@ -7,7 +7,9 @@ from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, 
 from fastapi.responses import FileResponse, StreamingResponse
 
 from src.api.schemas import (
+    AsrRunRequest,
     AsrResponse,
+    AsrSettingsResponse,
     BackgroundResponse,
     ExtractAudioResponse,
     JobListResponse,
@@ -19,14 +21,13 @@ from src.api.schemas import (
     PackageVideoRequest,
     PackageVideoResponse,
     SeparationResponse,
-    SpeakerResponse,
     VoiceOptionsResponse,
 )
 from src.services.file_service import FileService
 from src.services.job_service import JobService
 from src.services.media_service import MediaService
 from src.services.separation_service import SeparationService
-from src.services.speaker_service import SpeakerService
+from src.services.asr_settings_service import build_asr_overrides, build_asr_settings_response
 from src.services.video_service import VideoService
 from src.services.workflow_service import WorkflowService
 from src.video_types import DEFAULT_VIDEO_TYPE
@@ -51,6 +52,17 @@ def list_jobs(config: dict[str, Any] = Depends(get_config)) -> dict[str, Any]:
 @router.get("/tts/voices", response_model=VoiceOptionsResponse)
 def list_tts_voices() -> dict[str, Any]:
     return {"voices": list_voice_options()}
+
+
+@router.get("/asr/settings", response_model=AsrSettingsResponse)
+def get_asr_settings(
+    video_type: str | None = Query(None),
+    config: dict[str, Any] = Depends(get_config),
+) -> dict[str, Any]:
+    try:
+        return build_asr_settings_response(config, video_type=video_type)
+    except Exception as exc:
+        raise _to_http_exception(exc) from exc
 
 
 @router.post("/jobs", response_model=JobResponse)
@@ -146,22 +158,15 @@ def get_or_create_background(
         raise _to_http_exception(exc) from exc
 
 
-@router.post("/jobs/{job_id}/speakers/identify", response_model=SpeakerResponse)
-def identify_speakers(
-    job_id: str, config: dict[str, Any] = Depends(get_config)
-) -> dict[str, Any]:
-    try:
-        return SpeakerService(config).identify_placeholder_speakers(job_id)
-    except Exception as exc:
-        raise _to_http_exception(exc) from exc
-
-
 @router.post("/jobs/{job_id}/asr", response_model=AsrResponse)
 def run_asr(
-    job_id: str, config: dict[str, Any] = Depends(get_config)
+    job_id: str,
+    body: AsrRunRequest | None = Body(None),
+    config: dict[str, Any] = Depends(get_config),
 ) -> dict[str, Any]:
     try:
-        return WorkflowService(config).run_job_asr(job_id)
+        payload = body.model_dump(exclude_none=True) if body and hasattr(body, "model_dump") else body.dict(exclude_none=True) if body else {}
+        return WorkflowService(config).run_job_asr(job_id, overrides=build_asr_overrides(payload))
     except Exception as exc:
         raise _to_http_exception(exc) from exc
 

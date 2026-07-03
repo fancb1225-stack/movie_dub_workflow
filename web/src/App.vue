@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppHeader from "./components/AppHeader.vue";
+import AsrSettingsModal from "./components/AsrSettingsModal.vue";
 import JobPickerModal from "./components/JobPickerModal.vue";
 import JobSummary from "./components/JobSummary.vue";
 import OperationPanel from "./components/OperationPanel.vue";
@@ -9,7 +10,7 @@ import WorkflowPanel from "./components/WorkflowPanel.vue";
 import WorkflowSettingsModal from "./components/WorkflowSettingsModal.vue";
 import { useJobs } from "./composables/useJobs";
 import { useWorkflow } from "./composables/useWorkflow";
-import type { WorkflowOverrides } from "./types/api";
+import type { AsrRunOptions, WorkflowOverrides } from "./types/api";
 import { ref } from "vue";
 
 const jobs = useJobs();
@@ -53,6 +54,14 @@ async function submitWorkflowSettings(value: WorkflowOverrides): Promise<void> {
   await runSafely(() => workflow.submitSettings(value));
 }
 
+async function openAsrSettings(): Promise<void> {
+  await runSafely(workflow.openAsrSettings);
+}
+
+async function submitAsrSettings(value: AsrRunOptions): Promise<void> {
+  await runSafely(() => workflow.submitAsrSettings(value));
+}
+
 async function uploadJob(file: File, videoType: string): Promise<void> {
   workflow.clearLog();
   await jobs.upload(file, videoType);
@@ -91,7 +100,6 @@ async function selectJob(jobId: string): Promise<void> {
           @probe="runSafely(() => jobs.runOperation('文件信息', '/media/probe', 'GET'))"
           @extract-audio="runSafely(() => jobs.runOperation('音频提取', '/media/extract-audio'))"
           @separate="runSafely(() => jobs.runOperation('人声/背景分离', '/audio/separate'))"
-          @speakers="runSafely(() => jobs.runOperation('说话人识别', '/speakers/identify'))"
           @package-video="(payload) => runSafely(() => jobs.packageCurrentVideo(payload.outputFilename, payload.audioFile))"
           @download-artifacts="jobs.downloadArtifacts"
         />
@@ -105,8 +113,7 @@ async function selectJob(jobId: string): Promise<void> {
           :workflow-steps="workflow.workflowSteps.value"
           :log-lines="workflow.logLines.value"
           @preprocess="runSafely(workflow.runPreprocess)"
-          @asr="runSafely(workflow.runAsr)"
-          @speakers="runSafely(workflow.runSpeakerIdentify)"
+          @asr="openAsrSettings"
           @run="openWorkflowSettings('run')"
           @resume="openWorkflowSettings('resume')"
           @clear-log="workflow.clearLog"
@@ -130,6 +137,13 @@ async function selectJob(jobId: string): Promise<void> {
       :voice-options="workflow.voiceOptions.value"
       @close="workflow.closeSettings"
       @submit="submitWorkflowSettings"
+    />
+
+    <AsrSettingsModal
+      :open="workflow.asrSettingsOpen.value"
+      :settings="workflow.asrSettings.value"
+      @close="workflow.closeAsrSettings"
+      @submit="submitAsrSettings"
     />
   </div>
 </template>

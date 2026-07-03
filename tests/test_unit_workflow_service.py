@@ -409,12 +409,12 @@ class WorkflowServiceTests(unittest.TestCase):
             updated = JobService(config).get_job(job["job_id"])
             self.assertEqual(updated["status"], "langgraph_completed")
 
-    def test_workflow_hint_explains_cuda_dependency_error(self) -> None:
-        hint = _workflow_hint("Library cublas64_12.dll is not found or cannot be loaded")
+    def test_workflow_hint_explains_doubao_asr_error(self) -> None:
+        hint = _workflow_hint("Doubao ASR query failed: 40000001")
 
-        self.assertIn("CUDA", hint)
-        self.assertIn("asr.device", hint)
-        self.assertIn("cpu", hint)
+        self.assertIn("豆包 ASR", hint)
+        self.assertIn("DOUBAO_ASR_API_KEY", hint)
+        self.assertIn("TOS", hint)
 
     def test_workflow_hint_explains_llm_access_denied(self) -> None:
         hint = _workflow_hint("LLM HTTP 403: access_denied: IP is not allowed")

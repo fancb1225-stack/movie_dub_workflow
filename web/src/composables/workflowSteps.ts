@@ -7,7 +7,6 @@ export const preprocessStepsTemplate: StepState[] = [
 
 export const workflowStepsTemplate: StepState[] = [
   { key: "asr", label: "ASR", status: "等待", kind: "idle" },
-  { key: "speakers", label: "说话人识别", status: "等待", kind: "idle" },
   { key: "merge", label: "合并", status: "等待", kind: "idle" },
   { key: "clean_srt", label: "清洗字幕", status: "等待", kind: "idle" },
   { key: "critic", label: "校对", status: "等待", kind: "idle" },
@@ -22,7 +21,7 @@ export function cloneSteps(steps: StepState[]): StepState[] {
 
 export function initialLanggraphSteps(steps: StepState[]): StepState[] {
   return steps.map((step) => {
-    if (step.key === "asr" || step.key === "speakers") {
+    if (step.key === "asr") {
       return { ...step, kind: "done", status: "完成" };
     }
     if (step.key === "merge") {

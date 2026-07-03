@@ -10,7 +10,6 @@ const emit = defineEmits<{
   probe: [];
   extractAudio: [];
   separate: [];
-  speakers: [];
   packageVideo: [{ outputFilename: string; audioFile: File | null }];
   downloadArtifacts: [];
 }>();
@@ -29,7 +28,6 @@ const audioFile = ref<File | null>(null);
       <button type="button" :disabled="props.disabled" @click="emit('probe')"><span>◉</span><strong>文件信息</strong><small>读取格式与时长</small></button>
       <button type="button" :disabled="props.disabled" @click="emit('extractAudio')"><span>♪</span><strong>提取音频</strong><small>从视频分离音轨</small></button>
       <button type="button" :disabled="props.disabled" @click="emit('separate')"><span>≋</span><strong>分离人声</strong><small>生成 vocals/background</small></button>
-      <button type="button" :disabled="props.disabled" @click="emit('speakers')"><span>☷</span><strong>说话人</strong><small>读取占位识别</small></button>
       <button type="button" :disabled="props.disabled || !props.hasArtifacts" @click="emit('downloadArtifacts')"><span>⇩</span><strong>下载产物</strong><small>打包所有输出</small></button>
     </div>
     <!-- <div class="divider"></div>
