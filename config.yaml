@@ -107,7 +107,7 @@ srt:
 
 tts:
   provider: doubao
-  voice: Wise_Woman
+  voice: zh_female_popo_mars_bigtts
   rate: "+40%"
   sample_rate: 24000
   words_per_minute: 155
@@ -121,7 +121,7 @@ tts:
     resource_id: seed-tts-2.0
     model_env: TTS_MODEL
     model: seed-tts-2.0-standard
-    default_voice_id: Wise_Woman
+    default_voice_id: zh_female_popo_mars_bigtts
     format: mp3
     sample_rate: 24000
     bit_rate: 128000

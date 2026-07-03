@@ -30,7 +30,7 @@ watch(
   () => [props.open, props.initialOverrides, props.speakerProfiles] as const,
   () => {
     Object.assign(form, props.initialOverrides, {
-      speaker_profiles: Object.keys(props.speakerProfiles).length ? { ...props.speakerProfiles } : { default: "Wise_Woman" }
+      speaker_profiles: Object.keys(props.speakerProfiles).length ? { ...props.speakerProfiles } : { default: "zh_female_popo_mars_bigtts" }
     });
   },
   { immediate: true }

@@ -360,7 +360,7 @@ def _resolve_speaker_profile(cue: SrtCue, tts_config: dict[str, Any]) -> dict[st
         if default_voice:
             profile = {"voice_id": default_voice}
     if provider in {"minimax", "doubao"} and not profile.get("voice_id"):
-        profile["voice_id"] = "Wise_Woman"
+        profile["voice_id"] = "zh_female_popo_mars_bigtts" if provider == "doubao" else "Wise_Woman"
     if speaker_id != "default":
         profile.setdefault("speaker_id", speaker_id)
     if "speed" not in profile:
@@ -495,7 +495,7 @@ def _generate_doubao_tts(
         raise RuntimeError(f"TTS provider doubao requires {api_key_env} or DOUBAO_ASR_API_KEY.")
     model_env = str(doubao.get("model_env", "TTS_MODEL"))
     model = _clean_config_value(os.getenv(model_env, "")) or _clean_config_value(doubao.get("model", "seed-tts-2.0-standard"))
-    voice_id = _clean_config_value(speaker_profile.get("voice_id") or doubao.get("default_voice_id") or tts_config.get("voice") or "Wise_Woman")
+    voice_id = _clean_config_value(speaker_profile.get("voice_id") or doubao.get("default_voice_id") or tts_config.get("voice") or "zh_female_popo_mars_bigtts")
     if not voice_id:
         raise RuntimeError("TTS provider doubao requires voice_id for speaker profile.")
 

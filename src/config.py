@@ -111,7 +111,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "tts": {
         "provider": "doubao",
-        "voice": "Wise_Woman",
+        "voice": "zh_female_popo_mars_bigtts",
         "rate": "+30%",
         "sample_rate": 24000,
         "words_per_minute": 155,
@@ -125,7 +125,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "resource_id": "seed-tts-2.0",
             "model_env": "TTS_MODEL",
             "model": "seed-tts-2.0-standard",
-            "default_voice_id": "Wise_Woman",
+            "default_voice_id": "zh_female_popo_mars_bigtts",
             "format": "mp3",
             "sample_rate": 24000,
             "bit_rate": 128000,
@@ -188,6 +188,7 @@ def load_config(config_path: str | Path = "config.yaml") -> dict[str, Any]:
     config = _deep_merge(deepcopy(DEFAULT_CONFIG), data)
     _apply_llm_env(config)
     _apply_tos_env(config)
+    _apply_tts_env(config)
     config["project_root"] = str(path.resolve().parent if path.exists() else Path.cwd())
     return config
 
@@ -326,6 +327,18 @@ def _apply_tos_env(config: dict[str, Any]) -> None:
         value = os.getenv(env_name, "").strip()
         if value:
             tos[key] = value
+
+
+def _apply_tts_env(config: dict[str, Any]) -> None:
+    tts = config.setdefault("tts", {})
+    doubao = tts.setdefault("doubao", {})
+    voice_id = os.getenv("DOUBAO_TTS_VOICE_ID", "").strip() or os.getenv("TTS_VOICE_ID", "").strip()
+    if voice_id:
+        tts["voice"] = voice_id
+        doubao["default_voice_id"] = voice_id
+    model = os.getenv(str(doubao.get("model_env", "TTS_MODEL")), "").strip()
+    if model:
+        doubao["model"] = model
 
 
 def _windows_exe_name(name: str) -> str:

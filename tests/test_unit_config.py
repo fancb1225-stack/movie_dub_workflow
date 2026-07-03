@@ -49,6 +49,20 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config_value(config, "tos.bucket"), "movie-dub")
         self.assertEqual(config_value(config, "tos.object_prefix"), "movie-dub/asr")
 
+    def test_load_config_applies_doubao_tts_voice_env_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.yaml"
+            config_path.write_text("tts:\n  provider: doubao\n", encoding="utf-8")
+            env = {
+                "DOUBAO_TTS_VOICE_ID": "zh_female_popo_mars_bigtts",
+            }
+
+            with patch.dict("os.environ", env, clear=True):
+                config = load_config(config_path)
+
+        self.assertEqual(config_value(config, "tts.voice"), "zh_female_popo_mars_bigtts")
+        self.assertEqual(config_value(config, "tts.doubao.default_voice_id"), "zh_female_popo_mars_bigtts")
+
     def test_resolve_path_uses_project_root_for_relative_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = {"project_root": tmp}

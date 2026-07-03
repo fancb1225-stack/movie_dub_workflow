@@ -10,6 +10,8 @@ import {
 } from "./workflowSteps";
 
 const DEFAULT_VOICE_OPTIONS: VoiceOption[] = [
+  { voice_id: "zh_female_popo_mars_bigtts", label: "婆婆", original_label: "Popo", language: "中文" },
+  { voice_id: "multi_female_maomao_conversation_wvae_bigtts", label: "Diana", original_label: "Diana", language: "多语种" },
   { voice_id: "Wise_Woman", label: "智慧女声", original_label: "Wise Woman", language: "英文" },
   { voice_id: "Friendly_Person", label: "友好人物", original_label: "Friendly Person", language: "英文" },
   { voice_id: "Inspirational_girl", label: "励志女孩", original_label: "Inspirational Girl", language: "英文" },
@@ -32,7 +34,7 @@ export function isWorkflowResumable(job: Job | null | undefined): boolean {
 export function buildSpeakerProfilesWithDefault(
   speakers: string[],
   existingProfiles: Record<string, string>,
-  defaultVoice = "Wise_Woman"
+  defaultVoice = "zh_female_popo_mars_bigtts"
 ): Record<string, string> {
   const keys = Array.from(new Set([...speakers.filter(Boolean), "default"]));
   return Object.fromEntries(keys.map((speaker) => [speaker, existingProfiles[speaker] || defaultVoice]));
@@ -67,7 +69,7 @@ export function useWorkflow(
   const asrSettingsOpen = ref(false);
   const asrSettings = ref<AsrSettingsResponse | null>(null);
   const settingsMode = ref<"run" | "resume">("run");
-  const speakerProfiles = ref<Record<string, string>>({ default: "Wise_Woman" });
+  const speakerProfiles = ref<Record<string, string>>({ default: "zh_female_popo_mars_bigtts" });
   const overrides = ref<WorkflowOverrides>({
     max_reflection_rounds: 2,
     llm_timeout: 600,
@@ -293,7 +295,7 @@ export function useWorkflow(
 
   async function loadSpeakerProfiles(): Promise<void> {
     if (!job.value) {
-      speakerProfiles.value = { default: "Wise_Woman" };
+      speakerProfiles.value = { default: "zh_female_popo_mars_bigtts" };
       return;
     }
     const candidates = [job.value.asr_result?.speakers, job.value.extra?.asr_result?.speakers];
@@ -311,7 +313,7 @@ export function useWorkflow(
       const speakers = Array.from(new Set(rows.map((row) => row.speaker_id).filter(Boolean))) as string[];
       speakerProfiles.value = buildSpeakerProfilesWithDefault(speakers.length ? speakers : [], speakerProfiles.value);
     } catch {
-      speakerProfiles.value = { default: speakerProfiles.value.default || "Wise_Woman" };
+      speakerProfiles.value = { default: speakerProfiles.value.default || "zh_female_popo_mars_bigtts" };
     }
   }
 

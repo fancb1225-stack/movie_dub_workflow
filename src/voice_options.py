@@ -11,6 +11,8 @@ class VoiceOption(TypedDict):
 
 
 VOICE_OPTIONS: tuple[VoiceOption, ...] = (
+    {"voice_id": "zh_female_popo_mars_bigtts", "label": "婆婆", "original_label": "Popo", "language": "中文"},
+    {"voice_id": "multi_female_maomao_conversation_wvae_bigtts", "label": "Diana", "original_label": "Diana", "language": "多语种"},
     {"voice_id": "Wise_Woman", "label": "智慧女声", "original_label": "Wise Woman", "language": "英文"},
     {"voice_id": "Friendly_Person", "label": "友好人物", "original_label": "Friendly Person", "language": "英文"},
     {"voice_id": "Inspirational_girl", "label": "励志女孩", "original_label": "Inspirational Girl", "language": "英文"},
