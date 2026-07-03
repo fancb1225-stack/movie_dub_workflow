@@ -1,0 +1,24 @@
+cases_dir: eval/cases
+reports_dir: eval/reports
+llm:
+  api_key_env: EVAL_LLM_API_KEY
+  base_url: https://example.com/v1
+  model: judge-model
+  timeout: 60
+  max_retries: 2
+nodes:
+  merge_zh_asr_srt:
+    judge_prompt: eval/prompts/merge_zh_asr_srt_judge.md
+    deterministic_checks: ["srt_format"]
+  critic_srt:
+    judge_prompt: eval/prompts/critic_srt_judge.md
+    deterministic_checks: ["srt_format"]
+  summarize_plot:
+    judge_prompt: eval/prompts/summarize_plot_judge.md
+    deterministic_checks: []
+  translate_to_english:
+    judge_prompt: eval/prompts/translate_to_english_judge.md
+    deterministic_checks: ["srt_format"]
+  reflect_duration_issues:
+    judge_prompt: eval/prompts/reflect_duration_issues_judge.md
+    deterministic_checks: ["srt_format"]

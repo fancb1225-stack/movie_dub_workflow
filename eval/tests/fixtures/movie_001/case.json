@@ -1,0 +1,12 @@
+{
+  "case_name": "movie_001",
+  "total_tokens_usage": {
+    "prompt_tokens": 1,
+    "completion_tokens": 2,
+    "total_tokens": 3
+  },
+  "nodes_name": [
+    "translate_to_english"
+  ],
+  "error": null
+}
