@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.error
 from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
@@ -195,7 +196,11 @@ def _doubao_submit_task(audio_url: str, task_id: str, asr_config: dict[str, Any]
         body,
         include_sequence=True,
     )
-    with urlopen(request, timeout=float(asr_config.get("http_timeout", 30))) as response:
+    try:
+        response_context = urlopen(request, timeout=float(asr_config.get("http_timeout", 30)))
+    except urllib.error.HTTPError as exc:
+        raise _doubao_http_error("submit", exc) from exc
+    with response_context as response:
         status_code = str(response.getheader("X-Api-Status-Code", ""))
         message = str(response.getheader("X-Api-Message", ""))
     if status_code != "20000000":
@@ -212,7 +217,11 @@ def _doubao_query_task(
         {},
         include_sequence=False,
     )
-    with urlopen(request, timeout=float(asr_config.get("http_timeout", 30))) as response:
+    try:
+        response_context = urlopen(request, timeout=float(asr_config.get("http_timeout", 30)))
+    except urllib.error.HTTPError as exc:
+        raise _doubao_http_error("query", exc) from exc
+    with response_context as response:
         raw_body = response.read()
         status_code = str(response.getheader("X-Api-Status-Code", ""))
         message = str(response.getheader("X-Api-Message", ""))
@@ -241,6 +250,15 @@ def _doubao_request(
     if include_sequence:
         headers["X-Api-Sequence"] = "-1"
     return Request(url, data=json.dumps(body).encode("utf-8"), headers=headers, method="POST")
+
+
+def _doubao_http_error(stage: str, exc: urllib.error.HTTPError) -> RuntimeError:
+    raw_body = exc.read()
+    body = raw_body.decode("utf-8", errors="replace").strip() if raw_body else ""
+    detail = f"Doubao ASR {stage} HTTP {exc.code} {exc.reason}"
+    if body:
+        detail = f"{detail}: {body[:500]}"
+    return RuntimeError(detail)
 
 
 def _doubao_audio_payload(audio_url: str, asr_config: dict[str, Any]) -> dict[str, Any]:

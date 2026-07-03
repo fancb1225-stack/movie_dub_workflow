@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import types
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -237,6 +239,30 @@ class DoubaoHttpFlowTests(unittest.TestCase):
         query_request = requests[1]
         self.assertEqual(query_request.full_url, config["query_url"])
         self.assertEqual(json.loads(query_request.data.decode("utf-8")), {})
+
+    def test_submit_http_error_includes_stage_status_and_body(self) -> None:
+        error = urllib.error.HTTPError(
+            "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit",
+            401,
+            "Unauthorized",
+            {},
+            io.BytesIO(b'{"message":"invalid api key"}'),
+        )
+
+        with patch.dict("os.environ", {"DOUBAO_ASR_API_KEY": "api-key"}, clear=True):
+            with patch.object(asr_tools, "urlopen", side_effect=error, create=True):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "Doubao ASR submit HTTP 401 Unauthorized.*invalid api key",
+                ):
+                    asr_tools._run_doubao_file_recognition(
+                        "https://signed.example/x.wav",
+                        {
+                            "api_key_env": "DOUBAO_ASR_API_KEY",
+                            "poll_interval": 0,
+                            "max_query_attempts": 1,
+                        },
+                    )
 
 
 class _FakeHttpResponse:
