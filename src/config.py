@@ -167,6 +167,7 @@ def load_config(config_path: str | Path = "config.yaml") -> dict[str, Any]:
     data = _read_yaml(path) if path.exists() else {}
     config = _deep_merge(deepcopy(DEFAULT_CONFIG), data)
     _apply_llm_env(config)
+    _apply_tos_env(config)
     config["project_root"] = str(path.resolve().parent if path.exists() else Path.cwd())
     return config
 
@@ -291,6 +292,20 @@ def _apply_llm_env(config: dict[str, Any]) -> None:
             llm[key] = int(value)
         else:
             llm[key] = value
+
+
+def _apply_tos_env(config: dict[str, Any]) -> None:
+    tos = config.setdefault("tos", {})
+    env_map = {
+        "endpoint": "DOUBAO_TOS_ENDPOINT",
+        "region": "DOUBAO_TOS_REGION",
+        "bucket": "DOUBAO_TOS_BUCKET",
+        "object_prefix": "DOUBAO_TOS_PREFIX",
+    }
+    for key, env_name in env_map.items():
+        value = os.getenv(env_name, "").strip()
+        if value:
+            tos[key] = value
 
 
 def _windows_exe_name(name: str) -> str:
