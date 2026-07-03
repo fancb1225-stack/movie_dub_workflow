@@ -14,6 +14,7 @@ from src.nodes.translate_node import translate_to_english
 from src.nodes.tts_duration_node import tts_generate_and_detect
 from src.state import WorkflowState
 from src.trace_collector import get_active_collector
+from src.workflow_pause import WorkflowPauseRequired
 
 logger = logging.getLogger(__name__)
 
@@ -26,18 +27,50 @@ class RunnableWorkflow(Protocol):
         ...
 
 
+class WorkflowNodeError(RuntimeError):
+    """Wrap a node exception with the workflow node that raised it."""
+
+    def __init__(self, node: str, cause: Exception):
+        super().__init__(str(cause))
+        self.node = node
+        self.original = cause
+
+
+def get_exception_node(exc: BaseException) -> str | None:
+    if isinstance(exc, WorkflowNodeError):
+        return exc.node
+    node = getattr(exc, "node", None)
+    return str(node) if node else None
+
+
+def unwrap_workflow_node_error(exc: Exception) -> Exception:
+    if isinstance(exc, WorkflowNodeError) and isinstance(exc.__cause__, Exception):
+        return exc.__cause__
+    return exc
+
+
+def _wrap_node_exception(node_name: str, exc: Exception) -> Exception:
+    if isinstance(exc, WorkflowNodeError):
+        return exc
+    if isinstance(exc, WorkflowPauseRequired):
+        return exc
+    return WorkflowNodeError(node_name, exc)
+
+
 def with_trace(node_name: str, fn: Callable[[WorkflowState], WorkflowState]) -> Callable[[WorkflowState], WorkflowState]:
     """Wrap a node so the active trace collector (if any) tracks the current node."""
 
     def wrapped(state: WorkflowState) -> WorkflowState:
         collector = get_active_collector()
-        if collector is None:
-            return fn(state)
-        collector.set_current_node(node_name)
+        if collector is not None:
+            collector.set_current_node(node_name)
         try:
             return fn(state)
+        except Exception as exc:
+            raise _wrap_node_exception(node_name, exc) from exc
         finally:
-            collector.clear_current_node()
+            if collector is not None:
+                collector.clear_current_node()
 
     return wrapped
 

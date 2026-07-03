@@ -5,7 +5,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from src.graph import build_workflow
+from src.graph import build_workflow, get_exception_node, unwrap_workflow_node_error
 from src.services.job_service import JobService
 from src.services.media_service import MediaService
 from src.services.separation_service import SeparationService
@@ -400,14 +400,28 @@ def _progress_event(node_name: str, state: WorkflowState) -> dict[str, Any]:
 
 
 def _workflow_error_progress(exc: Exception, report: dict[str, Any]) -> dict[str, Any]:
+    cause = unwrap_workflow_node_error(exc)
+    message = str(cause)
     event: dict[str, Any] = {"event": "error", "report": report}
-    if isinstance(exc, FatalTtsError):
+    if isinstance(cause, FatalTtsError):
         event.update(
             {
                 "node": "tts_generate_and_detect",
                 "status": "error",
-                "message": str(exc),
-                "error": str(exc),
+                "message": message,
+                "error": message,
+            }
+        )
+        return event
+
+    node = get_exception_node(exc)
+    if node:
+        event.update(
+            {
+                "node": node,
+                "status": "error",
+                "message": message,
+                "error": message,
             }
         )
     return event

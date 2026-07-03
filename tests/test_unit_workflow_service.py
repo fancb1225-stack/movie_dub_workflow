@@ -253,6 +253,43 @@ class WorkflowServiceTests(unittest.TestCase):
             updated = JobService(config).get_job(job["job_id"])
             self.assertEqual(updated["status"], "langgraph_failed")
 
+    def test_streaming_workflow_generic_node_error_targets_wrapped_node(self) -> None:
+        from src.graph import with_trace
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = _config(temp_dir)
+            job = _create_job(config, "job-reflect-timeout-stream")
+            asr_dir = Path(job["paths"]["job_dir"]) / "workflow" / "asr"
+            asr_dir.mkdir(parents=True, exist_ok=True)
+            raw_srt_path = asr_dir / "zh_raw.srt"
+            raw_srt_path.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\n测试\n", encoding="utf-8"
+            )
+            JobService(config).update_job(job["job_id"], artifacts={"raw_srt": str(raw_srt_path)})
+
+            def failing_reflection(state: dict[str, Any]) -> dict[str, Any]:
+                raise RuntimeError("LLM request failed: The read operation timed out")
+
+            class FailingStreamWorkflow:
+                def stream(self, state: dict[str, Any]):
+                    state["duration_issues"] = [{"index": 1, "duration_ms": 1000}]
+                    yield {"tts_generate_and_detect": state}
+                    with_trace("reflect_duration_issues", failing_reflection)(state)
+
+            with patch("src.services.workflow_service.build_workflow", return_value=FailingStreamWorkflow()):
+                events = list(WorkflowService(config).run_job_langgraph_workflow_streaming(job["job_id"]))
+
+            error_event = events[-1]
+            self.assertEqual(error_event["event"], "error")
+            self.assertEqual(error_event["node"], "reflect_duration_issues")
+            self.assertEqual(error_event["status"], "error")
+            self.assertIn("LLM request failed", error_event["message"])
+            self.assertIn("LLM request failed", error_event["error"])
+            self.assertEqual(error_event["report"]["status"], "failed")
+            updated = JobService(config).get_job(job["job_id"])
+            self.assertEqual(updated["status"], "langgraph_failed")
+            self.assertEqual(updated["langgraph_progress"]["node"], "reflect_duration_issues")
+
     def test_streaming_workflow_tts_fatal_error_targets_tts_node(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = _config(temp_dir)
